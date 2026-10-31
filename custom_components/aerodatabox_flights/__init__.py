@@ -172,7 +172,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         schema=vol.Schema({
             vol.Required("flight_number"): str,
             vol.Required("date"): str,
-            vol.Optional("travelers"): vol.All([vol.Match(r"^person\\.[a-z0-9_]+$")]),
+            vol.Optional("travelers"): vol.All([vol.Match(r"^person\.[a-z0-9_]+$")]),
         }),
         supports_response=SupportsResponse.ONLY,
     )
