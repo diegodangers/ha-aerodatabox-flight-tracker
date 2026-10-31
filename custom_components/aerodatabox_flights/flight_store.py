@@ -118,6 +118,14 @@ class FlightStore:
         self._notify()
         return True
 
+    async def mark_registered(self, number: str, departure_date: str) -> None:
+        record = self._flights.get(flight_id(number, departure_date))
+        if record is None or record.get("tracking_registered_at"):
+            return
+        record["tracking_registered_at"] = datetime.now(timezone.utc).isoformat()
+        await self.async_save()
+        self._notify()
+
     async def mark_departed(self, number: str, departure_date: str) -> dict[str, Any]:
         """Idempotently record takeoff without crediting mileage until landing."""
         key = flight_id(number, departure_date)
