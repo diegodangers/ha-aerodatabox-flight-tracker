@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any
 
 # Migration safety: existing flight blueprints still send alerts.
-NATIVE_ALERTS_ENABLED = False
+NATIVE_ALERTS_ENABLED = True
 
 
 def alert_message(record: dict[str, Any], event: str) -> tuple[str, str]:
