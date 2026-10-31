@@ -18,7 +18,8 @@ import voluptuous as vol
 from .const import API_HOST, BASE_URL, CONF_API_KEY, DOMAIN
 from .flight_store import FlightStore
 from .fr24_lifecycle import matched_record, should_register, is_fr24_tracked, canonical_flight
-from .notifications import NATIVE_ALERTS_ENABLED, notification_plan, dispatch_plan
+from .notifications import NATIVE_ALERTS_ENABLED, notification_plan
+from .notification_dispatch import deliver_event
 from .notification_config import selected_recipients, DEFAULT_RECIPIENTS
 
 SERVICE_LOOKUP = "lookup_flight"
@@ -218,14 +219,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             else:
                 return
             if NATIVE_ALERTS_ENABLED:
-                # Target routing is deliberately empty until explicitly configured
-                # and verified; legacy automations remain responsible for delivery.
+                selected = record.get("alert_recipients") or DEFAULT_RECIPIENTS
                 steps = notification_plan(
-                    record, alert, datetime.now().astimezone(), [], [], [],
+                    record, alert, datetime.now().astimezone(),
+                    selected["phones"], selected["alexas"], selected["tv_services"],
                 )
-                errors = await dispatch_plan(hass, steps)
-                for error in errors:
-                    _LOGGER.warning("Flight notification failure: %s", error)
+                result = await deliver_event(
+                    hass, store, record, alert, steps, enabled=NATIVE_ALERTS_ENABLED,
+                )
+                for recipient in result["errors"]:
+                    _LOGGER.warning("Flight notification failed for %s", recipient)
         except Exception:
             _LOGGER.exception("Could not record FR24 event for %s", record["id"])
 
