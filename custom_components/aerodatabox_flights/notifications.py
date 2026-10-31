@@ -32,6 +32,7 @@ def in_alexa_hours(local: datetime) -> bool:
 def notification_plan(
     record: dict[str, Any], event: str, local_now: datetime,
     phones: list[str], alexas: list[str], televisions: list[str],
+    *, tv_is_on: bool = True,
 ) -> list[dict[str, Any]]:
     title, message = alert_message(record, event)
     steps: list[dict[str, Any]] = []
@@ -45,7 +46,7 @@ def notification_plan(
             "domain": "notify", "service": "alexa_media",
             "data": {"target": sorted(set(alexas)), "message": message, "data": {"type": "announce"}},
         })
-    for service in sorted(set(televisions)):
+    for service in sorted(set(televisions)) if tv_is_on else []:
         steps.append({
             "domain": "notify", "service": service,
             "data": {"title": title, "message": message},
