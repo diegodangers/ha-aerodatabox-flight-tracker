@@ -98,6 +98,11 @@ class FlightStore:
             record.setdefault("travelers", [])
         if metadata is not None:
             record["metadata"] = metadata
+            # Preserve initial schedule when the airline revises its estimates.
+            record["scheduled_departure_utc"] = old.get("scheduled_departure_utc") or metadata.get("scheduled_departure_utc")
+            record["scheduled_arrival_utc"] = old.get("scheduled_arrival_utc") or metadata.get("scheduled_arrival_utc")
+            if metadata.get("revised_departure_utc"):
+                record["estimated_departure_utc"] = metadata["revised_departure_utc"]
             record["metadata_updated_at"] = datetime.now(timezone.utc).isoformat()
             miles = great_circle_miles(metadata.get("departure_coordinates"), metadata.get("arrival_coordinates"))
             if miles is not None:
@@ -188,6 +193,7 @@ class FlightStore:
             return record.copy()
         record["status"] = "airborne"
         record["departed_at"] = datetime.now(timezone.utc).isoformat()
+        record["actual_departure_utc"] = record["departed_at"]
         await self.async_save()
         self._notify()
         return record.copy()
@@ -207,9 +213,25 @@ class FlightStore:
             return record.copy()
         record["status"] = status
         record["finalized_at"] = datetime.now(timezone.utc).isoformat()
+        if status == "landed":
+            record["actual_arrival_utc"] = record["finalized_at"]
         await self.async_save()
         self._notify()
         return record.copy()
+
+    async def update_estimates(self, number: str, departure_date: str, *, departure: str | None = None, arrival: str | None = None) -> None:
+        """Persist available live estimates without changing original schedule."""
+        record = self._flights.get(flight_id(number, departure_date))
+        if record is None or record.get("finalized_at"):
+            return
+        changed = False
+        for key, value in (("estimated_departure_utc", departure), ("estimated_arrival_utc", arrival)):
+            if value and record.get(key) != value:
+                record[key] = value
+                changed = True
+        if changed:
+            await self.async_save()
+            self._notify()
 
     def statistics(self) -> dict[str, Any]:
         records = list(self._flights.values())
