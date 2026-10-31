@@ -20,7 +20,15 @@ def _timestamp(value):
 
 
 def airline_code(number: str) -> str | None:
-    match = re.fullmatch(r"([A-Z0-9]{2,3})([0-9]{1,5}[A-Z]?)", str(number).upper().replace(" ", ""))
+    normalized = str(number).upper().replace(" ", "")
+    # IATA flight designators are two characters. Prefer them before the
+    # numeric flight suffix; otherwise a digit can be swallowed as code #3.
+    match = re.fullmatch(r"([A-Z0-9]{2})([0-9]{1,5}[A-Z]?)", normalized)
+    if match:
+        return match.group(1)
+    # Accept distinct three-letter identifiers without treating a digit
+    # from a two-character IATA flight number as part of the airline.
+    match = re.fullmatch(r"([A-Z]{3})([0-9]{1,5}[A-Z]?)", normalized)
     return match.group(1) if match else None
 
 
