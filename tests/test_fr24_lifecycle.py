@@ -29,3 +29,15 @@ class FlightLifecycleTests(unittest.TestCase):
     def test_scheduled_start_utc(self):
         row = {"metadata": {"scheduled_departure_utc": "2026-11-01 10:45Z"}}
         self.assertEqual(module.scheduled_start(row).isoformat(), "2026-11-01T08:45:00+00:00")
+
+    def test_registration_window(self):
+        start = datetime(2026, 11, 1, 10, 45, tzinfo=timezone.utc)
+        record = {
+            "flight_number": "3U6996",
+            "metadata": {"scheduled_departure_utc": "2026-11-01 10:45Z"},
+        }
+        self.assertFalse(module.should_register(record, set(), start - timedelta(hours=3)))
+        self.assertTrue(module.should_register(record, set(), start - timedelta(minutes=30)))
+        self.assertFalse(module.should_register(record, set(), start + timedelta(minutes=1)))
+        self.assertFalse(module.should_register(record, {"3U6996"}, start - timedelta(minutes=30)))
+        self.assertFalse(module.should_register({**record, "finalized_at": "done"}, set(), start - timedelta(minutes=30)))
