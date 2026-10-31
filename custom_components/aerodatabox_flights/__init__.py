@@ -1,18 +1,23 @@
 """AeroDataBox scheduled flight lookup service."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 import re
+import logging
+
+_LOGGER = logging.getLogger(__name__)
 from urllib.parse import quote
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import aiohttp_client
+from homeassistant.helpers.event import async_track_time_interval
 import voluptuous as vol
 
 from .const import API_HOST, BASE_URL, CONF_API_KEY, DOMAIN
 from .flight_store import FlightStore
+from .discovery import EVENT, parse_registration
 
 SERVICE_LOOKUP = "lookup_flight"
 SERVICE_SAVE_FLIGHT = "save_flight"
@@ -111,6 +116,49 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
         return {"flight_number": flight, "date": flight_date, "flights": matches, "count": len(matches)}
 
+    async def register_event(event) -> None:
+        parsed = parse_registration(event.data)
+        if parsed is None:
+            return
+        number, day, travelers = parsed
+        await store.upsert(number, day, travelers=travelers)
+
+    async def scheduled_refresh(now) -> None:
+        """Refresh known upcoming flights, skipping recently refreshed records.
+
+        The blueprint still performs its own 12-hour lookup; the 30-minute
+        offset and last-success guard avoid a second immediate request.
+        """
+        for record in store.all():
+            if record.get("finalized_at"):
+                continue
+            try:
+                departure = date.fromisoformat(record["departure_date"])
+                age = (datetime.now(timezone.utc) -
+                       datetime.fromisoformat(record["metadata_updated_at"])
+                      ) if record.get("metadata_updated_at") else None
+            except (ValueError, TypeError):
+                continue
+            if not (date.today() <= departure <= date.today() + timedelta(days=2)):
+                continue
+            if age is not None and age < timedelta(hours=11):
+                continue
+            try:
+                await hass.services.async_call(
+                    DOMAIN, SERVICE_LOOKUP,
+                    {"flight_number": record["flight_number"],
+                     "date": record["departure_date"]},
+                    blocking=True, return_response=True,
+                )
+            except Exception:
+                # Individual API failures must not prevent other flights.
+                _LOGGER.exception("Scheduled lookup failed for %s", record["id"])
+
+    remove_event = hass.bus.async_listen(EVENT, register_event)
+    entry.async_on_unload(remove_event)
+    entry.async_on_unload(async_track_time_interval(
+        hass, scheduled_refresh, timedelta(hours=12),
+    ))
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = store
     hass.services.async_register(
         DOMAIN, SERVICE_SAVE_FLIGHT, save_flight,
