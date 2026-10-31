@@ -40,6 +40,7 @@ for name in ("const", "flight_store"):
 
 FlightStore = sys.modules["flight_test_package.flight_store"].FlightStore
 flight_id = sys.modules["flight_test_package.flight_store"].flight_id
+great_circle_miles = sys.modules["flight_test_package.flight_store"].great_circle_miles
 
 class FlightHistoryTests(unittest.TestCase):
     def setUp(self):
@@ -71,3 +72,29 @@ class FlightHistoryTests(unittest.TestCase):
 
     def test_id(self):
         self.assertEqual(flight_id("dl 2084", "2026-10-31"), "DL2084_2026-10-31")
+
+    def test_great_circle_distance(self):
+        self.assertEqual(great_circle_miles({"lat": 0, "lon": 0}, {"lat": 0, "lon": 0}), 0.0)
+        self.assertIsNone(great_circle_miles({"lat": 500, "lon": 0}, {"lat": 0, "lon": 1}))
+        self.assertAlmostEqual(
+            great_circle_miles({"lat": 40.6413, "lon": -73.7781}, {"lat": 33.6407, "lon": -84.4277}),
+            759, delta=15,
+        )
+
+    def test_traveler_miles_only_once(self):
+        async def run():
+            store = FlightStore(None)
+            await store.async_load()
+            await store.upsert(
+                "DL100", "2026-11-02", travelers=["person.diego", "person.keri"],
+                metadata={"departure_coordinates": {"lat": 0, "lon": 0},
+                          "arrival_coordinates": {"lat": 0, "lon": 1}},
+            )
+            await store.finalize("DL100", "2026-11-02", status="landed")
+            await store.finalize("DL100", "2026-11-02", status="landed")
+            stats = store.statistics()
+            self.assertEqual(stats["total_flights"], 1)
+            self.assertEqual(stats["completed_flights"], 1)
+            self.assertGreater(stats["unique_completed_miles"], 60)
+            self.assertEqual(stats["person"]["person.diego"]["miles"], stats["person"]["person.keri"]["miles"])
+        asyncio.run(run())
