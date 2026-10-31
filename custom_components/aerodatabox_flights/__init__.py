@@ -131,9 +131,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     hass.services.async_register(DOMAIN, SERVICE_LOOKUP, lookup, schema=SCHEMA,
                                  supports_response=SupportsResponse.ONLY)
+    await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    if not await hass.config_entries.async_unload_platforms(entry, ["sensor"]):
+        return False
     hass.data[DOMAIN].pop(entry.entry_id, None)
     hass.services.async_remove(DOMAIN, SERVICE_LOOKUP)
     hass.services.async_remove(DOMAIN, SERVICE_SAVE_FLIGHT)
