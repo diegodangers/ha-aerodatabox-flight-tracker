@@ -23,6 +23,19 @@ class PerformanceTests(unittest.TestCase):
         self.assertIsNone(mod.airline_code("invalid"))
 
 
+    def test_cancellations_count_against_reliability(self):
+        on_time = flight("DL2084", "2026-10-31", "2026-10-31T12:00:00+00:00", "2026-10-31T12:05:00+00:00")
+        canceled = {"flight_number": "DL389", "status": "canceled",
+                    "finalized_at": "2026-10-31T10:00:00+00:00",
+                    "travelers": ["person.diego"]}
+        result = mod.punctuality([on_time, canceled])["DL"]
+        self.assertEqual(result["completed_flights"], 1)
+        self.assertEqual(result["canceled_flights"], 1)
+        self.assertEqual(result["arrival_samples"], 1)
+        self.assertEqual(result["on_time_arrival_pct"], 100.0)
+        self.assertEqual(result["overall_on_time_pct"], 50.0)
+        self.assertEqual(result["cancellation_rate_pct"], 50.0)
+
     def test_grouping_and_delay_threshold(self):
         records = [
             flight("DL2084","2026-10-31","2026-10-31T12:00:00+00:00","2026-10-31T11:50:00+00:00"),
