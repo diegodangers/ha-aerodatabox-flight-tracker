@@ -19,6 +19,7 @@ from .const import API_HOST, BASE_URL, CONF_API_KEY, DOMAIN
 from .flight_store import FlightStore
 from .fr24_lifecycle import matched_record, should_register, is_fr24_tracked, canonical_flight
 from .notifications import NATIVE_ALERTS_ENABLED, notification_plan, dispatch_plan
+from .notification_config import selected_recipients, DEFAULT_RECIPIENTS
 
 SERVICE_LOOKUP = "lookup_flight"
 SERVICE_SAVE_FLIGHT = "save_flight"
@@ -26,6 +27,7 @@ SERVICE_LIST_FLIGHTS = "list_flights"
 SERVICE_FINALIZE_FLIGHT = "finalize_flight"
 SERVICE_DELETE_FLIGHT = "delete_flight"
 SERVICE_PREVIEW_ALERT = "preview_flight_alert"
+SERVICE_SET_RECIPIENTS = "set_flight_alert_recipients"
 SCHEMA = vol.Schema({vol.Required("flight_number"): str, vol.Required("date"): str})
 
 def normalize_time(raw):
@@ -73,6 +75,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         deleted = await store.delete(call.data["flight_number"], call.data["date"])
         return {"deleted": deleted}
 
+    async def set_flight_alert_recipients(call: ServiceCall) -> dict:
+        try:
+            preferences = selected_recipients(
+                call.data.get("phones", []),
+                call.data.get("alexas", []),
+                call.data.get("tv_services", []),
+            )
+            record = await store.set_recipients(
+                call.data["flight_number"], call.data["date"], preferences,
+            )
+        except (ValueError, KeyError) as exc:
+            raise HomeAssistantError(str(exc)) from exc
+        return {"enabled": False, "recipients": record["alert_recipients"]}
+
     async def preview_flight_alert(call: ServiceCall) -> dict:
         """Show exact routing without delivering an alert."""
         record = store.get(call.data["flight_number"], call.data["date"])
@@ -82,8 +98,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "enabled": NATIVE_ALERTS_ENABLED,
             "actions": notification_plan(
                 record, call.data["event"], datetime.now().astimezone(),
-                call.data.get("phones", []), call.data.get("alexas", []),
-                call.data.get("tv_services", []),
+                (record.get("alert_recipients") or DEFAULT_RECIPIENTS)["phones"],
+                (record.get("alert_recipients") or DEFAULT_RECIPIENTS)["alexas"],
+                (record.get("alert_recipients") or DEFAULT_RECIPIENTS)["tv_services"],
             ),
         }
 
@@ -278,6 +295,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
+        DOMAIN, SERVICE_SET_RECIPIENTS, set_flight_alert_recipients,
+        schema=vol.Schema({
+            vol.Required("flight_number"): str,
+            vol.Required("date"): str,
+            vol.Optional("phones", default=[]): [str],
+            vol.Optional("alexas", default=[]): [str],
+            vol.Optional("tv_services", default=[]): [str],
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
         DOMAIN, SERVICE_PREVIEW_ALERT, preview_flight_alert,
         schema=vol.Schema({
             vol.Required("flight_number"): str,
@@ -317,4 +345,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_remove(DOMAIN, SERVICE_FINALIZE_FLIGHT)
     hass.services.async_remove(DOMAIN, SERVICE_DELETE_FLIGHT)
     hass.services.async_remove(DOMAIN, SERVICE_PREVIEW_ALERT)
+    hass.services.async_remove(DOMAIN, SERVICE_SET_RECIPIENTS)
     return True
