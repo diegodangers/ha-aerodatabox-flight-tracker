@@ -27,6 +27,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 known[key].async_write_ha_state()
         if added:
             async_add_entities(added)
+        # Remove stale dynamic sensors when their saved flight is deleted.
+        remaining = {record["id"] for record in store.all()}
+        for key in list(known):
+            if key not in remaining:
+                sensor = known.pop(key)
+                hass.async_create_task(sensor.async_remove())
         summary.async_write_ha_state()
 
     # Initial registration must occur without writing states before HA adds entities.
