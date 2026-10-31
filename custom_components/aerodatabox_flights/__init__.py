@@ -12,8 +12,11 @@ from homeassistant.helpers import aiohttp_client
 import voluptuous as vol
 
 from .const import API_HOST, BASE_URL, CONF_API_KEY, DOMAIN
+from .flight_store import FlightStore
 
 SERVICE_LOOKUP = "lookup_flight"
+SERVICE_SAVE_FLIGHT = "save_flight"
+SERVICE_LIST_FLIGHTS = "list_flights"
 SCHEMA = vol.Schema({vol.Required("flight_number"): str, vol.Required("date"): str})
 
 def normalize_time(raw):
@@ -22,6 +25,19 @@ def normalize_time(raw):
     return raw.get("utc") or raw.get("local")
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    store = FlightStore(hass)
+    await store.async_load()
+
+    async def save_flight(call: ServiceCall) -> dict:
+        record = await store.upsert(
+            call.data["flight_number"], call.data["date"],
+            travelers=call.data.get("travelers"),
+        )
+        return {"flight": record}
+
+    async def list_flights(call: ServiceCall) -> dict:
+        return {"flights": store.all(), "statistics": store.statistics()}
+
     async def lookup(call: ServiceCall) -> dict:
         flight = re.sub(r"\s+", "", call.data["flight_number"].upper())
         if not re.fullmatch(r"[A-Z0-9]{2,3}[0-9]{1,5}[A-Z]?", flight):
@@ -72,7 +88,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             })
         return {"flight_number": flight, "date": flight_date, "flights": matches, "count": len(matches)}
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = True
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = store
+    hass.services.async_register(
+        DOMAIN, SERVICE_SAVE_FLIGHT, save_flight,
+        schema=vol.Schema({
+            vol.Required("flight_number"): str,
+            vol.Required("date"): str,
+            vol.Optional("travelers"): [str],
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_LIST_FLIGHTS, list_flights,
+        supports_response=SupportsResponse.ONLY,
+    )
     hass.services.async_register(DOMAIN, SERVICE_LOOKUP, lookup, schema=SCHEMA,
                                  supports_response=SupportsResponse.ONLY)
     return True
@@ -80,4 +109,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN].pop(entry.entry_id, None)
     hass.services.async_remove(DOMAIN, SERVICE_LOOKUP)
+    hass.services.async_remove(DOMAIN, SERVICE_SAVE_FLIGHT)
+    hass.services.async_remove(DOMAIN, SERVICE_LIST_FLIGHTS)
     return True
