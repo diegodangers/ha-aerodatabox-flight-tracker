@@ -14,6 +14,15 @@ def flight(number, day, scheduled, actual, travelers=None):
             "published_arrival_utc":scheduled, "travelers":travelers or ["person.diego"]}
 
 class PerformanceTests(unittest.TestCase):
+    def test_iata_prefix_parsing(self):
+        self.assertEqual(mod.airline_code("DL2084"), "DL")
+        self.assertEqual(mod.airline_code("DL389"), "DL")
+        self.assertEqual(mod.airline_code("3U6996"), "3U")
+        self.assertEqual(mod.airline_code("AA100"), "AA")
+        self.assertEqual(mod.airline_code("ABC123"), "ABC")
+        self.assertIsNone(mod.airline_code("invalid"))
+
+
     def test_grouping_and_delay_threshold(self):
         records = [
             flight("DL2084","2026-10-31","2026-10-31T12:00:00+00:00","2026-10-31T11:50:00+00:00"),
