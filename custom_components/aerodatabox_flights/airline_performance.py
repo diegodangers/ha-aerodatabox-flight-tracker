@@ -36,11 +36,15 @@ def punctuality(records: list[dict]) -> dict:
     groups = defaultdict(list)
     for record in records:
         code = airline_code(record.get("flight_number", ""))
-        if code and record.get("status") == "landed" and record.get("finalized_at"):
+        if code and record.get("status") in ("landed", "canceled") and record.get("finalized_at"):
             groups[code].append(record)
 
     def aggregate(flights):
-        result = {"completed_flights": len(flights), "departure_samples": 0,
+        result = {"completed_flights": sum(f.get("status") == "landed" for f in flights),
+                  "canceled_flights": sum(f.get("status") == "canceled" for f in flights),
+                  "scheduled_outcomes": len(flights),
+                  "cancellation_rate_pct": round(100 * sum(f.get("status") == "canceled" for f in flights) / len(flights), 1) if flights else None,
+                  "overall_on_time_pct": None, "departure_samples": 0,
                   "arrival_samples": 0, "early_departures": 0, "late_departures": 0,
                   "early_arrivals": 0, "late_arrivals": 0, "on_time_arrivals": 0,
                   "average_departure_variance_min": None,
@@ -48,6 +52,8 @@ def punctuality(records: list[dict]) -> dict:
                   "worst_arrival_delay_min": None}
         dep, arr = [], []
         for f in flights:
+            if f.get("status") != "landed":
+                continue
             meta = f.get("metadata") or {}
             base_dep = _timestamp(f.get("published_departure_utc") or meta.get("scheduled_departure_utc"))
             base_arr = _timestamp(f.get("published_arrival_utc") or meta.get("scheduled_arrival_utc"))
@@ -72,6 +78,8 @@ def punctuality(records: list[dict]) -> dict:
             result["average_arrival_variance_min"] = round(sum(arr) / len(arr), 1)
             result["on_time_arrival_pct"] = round(100 * result["on_time_arrivals"] / len(arr), 1)
             result["worst_arrival_delay_min"] = round(max(0, max(arr)), 1)
+        if flights:
+            result["overall_on_time_pct"] = round(100 * result["on_time_arrivals"] / len(flights), 1)
         return result
 
     return {
