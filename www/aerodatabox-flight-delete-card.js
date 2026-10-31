@@ -70,7 +70,28 @@ class AerodataboxFlightDeleteCard extends HTMLElement {
           button.textContent = "Delete";
         }
       });
-      row.append(details, button);
+      const controls = document.createElement("div");
+      controls.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap";
+      const excluded = f.include_in_statistics === false;
+      const statsButton = document.createElement("button");
+      statsButton.type = "button";
+      statsButton.textContent = excluded ? "Include in stats" : "Exclude from stats";
+      statsButton.title = "Toggle this flight's contribution to counts and airline punctuality without deleting it";
+      statsButton.style.cssText = "background:transparent;color:var(--primary-text-color);border:1px solid var(--divider-color);padding:8px;border-radius:8px;cursor:pointer";
+      statsButton.addEventListener("click", async () => {
+        statsButton.disabled = true;
+        try {
+          await this._hass.callService("aerodatabox_flights", "set_flight_statistics_included", {
+            flight_number: f.flight_number, date: f.departure_date, included: excluded
+          });
+        } catch (err) {
+          window.alert("Unable to change statistics: " + (err?.message || String(err)));
+        } finally {
+          statsButton.disabled = false;
+        }
+      });
+      controls.append(statsButton, button);
+      row.append(details, controls);
       this._body.append(row);
     }
   }
