@@ -102,6 +102,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 (record.get("alert_recipients") or DEFAULT_RECIPIENTS)["phones"],
                 (record.get("alert_recipients") or DEFAULT_RECIPIENTS)["alexas"],
                 (record.get("alert_recipients") or DEFAULT_RECIPIENTS)["tv_services"],
+                tv_is_on=hass.states.is_state("media_player.family_room_tv", "on"),
             ),
         }
 
@@ -223,6 +224,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 steps = notification_plan(
                     record, alert, datetime.now().astimezone(),
                     selected["phones"], selected["alexas"], selected["tv_services"],
+                tv_is_on=hass.states.is_state("media_player.family_room_tv", "on"),
                 )
                 result = await deliver_event(
                     hass, store, record, alert, steps, enabled=NATIVE_ALERTS_ENABLED,
