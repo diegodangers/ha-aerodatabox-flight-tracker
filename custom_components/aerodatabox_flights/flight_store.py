@@ -203,7 +203,7 @@ class FlightStore:
         await self.async_save()
         self._notify()
 
-    async def mark_departed(self, number: str, departure_date: str) -> dict[str, Any]:
+    async def mark_departed(self, number: str, departure_date: str, *, actual_time: str | None = None) -> dict[str, Any]:
         """Idempotently record takeoff without crediting mileage until landing."""
         key = flight_id(number, departure_date)
         record = self._flights.get(key)
@@ -213,7 +213,7 @@ class FlightStore:
             return record.copy()
         record["status"] = "airborne"
         record["departed_at"] = datetime.now(timezone.utc).isoformat()
-        record["actual_departure_utc"] = record["departed_at"]
+        record["actual_departure_utc"] = actual_time or record["departed_at"]
         await self.async_save()
         self._notify()
         return record.copy()
@@ -224,6 +224,7 @@ class FlightStore:
         departure_date: str,
         *,
         status: str,
+        actual_time: str | None = None,
     ) -> dict[str, Any]:
         key = flight_id(number, departure_date)
         if key not in self._flights:
@@ -232,9 +233,11 @@ class FlightStore:
         if record.get("finalized_at"):
             return record.copy()
         record["status"] = status
+        if status == "canceled":
+            record["canceled_at"] = datetime.now(timezone.utc).isoformat()
         record["finalized_at"] = datetime.now(timezone.utc).isoformat()
         if status == "landed":
-            record["actual_arrival_utc"] = record["finalized_at"]
+            record["actual_arrival_utc"] = actual_time or record["finalized_at"]
         await self.async_save()
         self._notify()
         return record.copy()
