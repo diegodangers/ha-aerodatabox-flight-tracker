@@ -30,8 +30,82 @@ class AerodataboxFlightDeleteCard extends HTMLElement {
         s.attributes?.flight_number && s.attributes?.departure_date)
       .sort((a,b) => a.attributes.departure_date.localeCompare(b.attributes.departure_date));
     this._body.replaceChildren();
+    // Store the form state across Home Assistant sensor refreshes.
+    this._draft ||= { flight: "", date: "", travelers: [] };
+    const form = document.createElement("form");
+    form.style.cssText = "display:grid;gap:10px;padding:12px;border:1px solid var(--divider-color);border-radius:10px";
+    const title = document.createElement("strong");
+    title.textContent = "Add Flight";
+    const number = document.createElement("input");
+    number.placeholder = "Flight number (e.g. DL389)";
+    number.required = true;
+    number.value = this._draft.flight;
+    number.style.cssText = "padding:10px;border-radius:8px;border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color)";
+    number.addEventListener("input", () => { this._draft.flight = number.value; });
+    const date = document.createElement("input");
+    date.type = "date";
+    date.required = true;
+    date.value = this._draft.date;
+    date.style.cssText = number.style.cssText;
+    date.addEventListener("input", () => { this._draft.date = date.value; });
+    const travelers = document.createElement("fieldset");
+    const legend = document.createElement("legend");
+    legend.textContent = "Travelers";
+    travelers.append(legend);
+    const people = Object.values(this._hass.states)
+      .filter(state => state.entity_id.startsWith("person."))
+      .sort((a,b) => a.attributes.friendly_name.localeCompare(b.attributes.friendly_name));
+    for (const person of people) {
+      const label = document.createElement("label");
+      label.style.cssText = "display:inline-flex;align-items:center;gap:6px;margin:4px 12px 4px 0";
+      const check = document.createElement("input");
+      check.type = "checkbox";
+      check.checked = this._draft.travelers.includes(person.entity_id);
+      check.addEventListener("change", () => {
+        const selected = new Set(this._draft.travelers);
+        if (check.checked) selected.add(person.entity_id);
+        else selected.delete(person.entity_id);
+        this._draft.travelers = [...selected];
+      });
+      label.append(check, document.createTextNode(person.attributes.friendly_name || person.entity_id));
+      travelers.append(label);
+    }
+    const save = document.createElement("button");
+    save.type = "submit";
+    save.textContent = "Add Flight";
+    save.style.cssText = "padding:10px;border:1px solid var(--divider-color);border-radius:8px;cursor:pointer";
+    form.append(title, number, date, travelers, save);
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      const flight_number = this._draft.flight.toUpperCase().replace(/\\s+/g, "");
+      const departure_date = this._draft.date;
+      if (!/^[A-Z0-9]{2,3}[0-9]{1,5}[A-Z]?$/.test(flight_number) || !/^\\d{4}-\\d{2}-\\d{2}$/.test(departure_date)) {
+        window.alert("Enter a valid flight number and departure date.");
+        return;
+      }
+      if (!this._draft.travelers.length) {
+        window.alert("Select at least one traveler.");
+        return;
+      }
+      save.disabled = true;
+      save.textContent = "Saving…";
+      try {
+        await this._hass.callService("aerodatabox_flights", "save_flight", {
+          flight_number, date: departure_date, travelers: this._draft.travelers
+        });
+        this._draft = {flight:"",date:"",travelers:[]};
+        this._render();
+      } catch (err) {
+        window.alert("Unable to save flight: " + (err?.message || String(err)));
+        save.disabled = false;
+        save.textContent = "Add Flight";
+      }
+    });
+    this._body.append(form);
     if (!flights.length) {
-      this._body.textContent = "No saved flights.";
+      const empty = document.createElement("div");
+      empty.textContent = "No saved flights.";
+      this._body.append(empty);
       return;
     }
     for (const state of flights) {
@@ -102,6 +176,6 @@ if (!customElements.get("aerodatabox-flight-delete-card")) {
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "aerodatabox-flight-delete-card",
-  name: "AeroDataBox Flight Delete",
+  name: "AeroDataBox Flight Manager",
   description: "Confirm before deleting a saved flight from AeroDataBox history."
 });
