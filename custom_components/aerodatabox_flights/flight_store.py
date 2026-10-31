@@ -108,6 +108,16 @@ class FlightStore:
         self._notify()
         return record.copy()
 
+    async def delete(self, number: str, departure_date: str) -> bool:
+        """Permanently remove a test record without touching other flights."""
+        key = flight_id(number, departure_date)
+        if key not in self._flights:
+            return False
+        del self._flights[key]
+        await self.async_save()
+        self._notify()
+        return True
+
     async def finalize(
         self,
         number: str,
