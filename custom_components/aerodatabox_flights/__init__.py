@@ -108,6 +108,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         }
 
     async def lookup_flight_data(number: str, flight_date: str) -> dict:
+        # No further AeroDataBox requests after successful FR24 handoff.
+        existing = store.get(number, flight_date)
+        if existing and existing.get("tracking_registered_at"):
+            saved = existing.get("metadata") or {}
+            return {"flight_number": number, "date": flight_date,
+                    "flights": [saved] if saved else [], "count": 1 if saved else 0}
         flight = re.sub(r"\\s+", "", number.upper())
         if not re.fullmatch(r"[A-Z0-9]{2,3}[0-9]{1,5}[A-Z]?", flight):
             raise HomeAssistantError("Invalid flight number")
@@ -177,7 +183,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         This timer is owned by the integration, not a per-flight blueprint.
         """
         for record in store.all():
-            if record.get("finalized_at"):
+            if record.get("finalized_at") or record.get("tracking_registered_at"):
                 continue
             try:
                 departure = date.fromisoformat(record["departure_date"])
