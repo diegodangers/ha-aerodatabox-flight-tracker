@@ -17,7 +17,6 @@ import voluptuous as vol
 
 from .const import API_HOST, BASE_URL, CONF_API_KEY, DOMAIN
 from .flight_store import FlightStore
-from .discovery import EVENT, parse_registration
 
 SERVICE_LOOKUP = "lookup_flight"
 SERVICE_SAVE_FLIGHT = "save_flight"
@@ -36,9 +35,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await store.async_load()
 
     async def save_flight(call: ServiceCall) -> dict:
+        """Register a flight from the app without requiring a blueprint.
+
+        A new flight is validated by AeroDataBox before it is saved. Existing
+        records can have their traveler assignments edited without an API call.
+        """
+        number = call.data["flight_number"]
+        day = call.data["date"]
+        existing = store.get(number, day)
+        if existing is None:
+            result = await lookup_flight_data(number, day)
+            if not result["flights"]:
+                raise HomeAssistantError("AeroDataBox did not find this flight")
+            await store.upsert(number, day, metadata=result["flights"][0])
         record = await store.upsert(
-            call.data["flight_number"], call.data["date"],
-            travelers=call.data.get("travelers"),
+            number, day, travelers=call.data.get("travelers"),
         )
         return {"flight": record}
 
@@ -63,7 +74,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         flight = re.sub(r"\s+", "", call.data["flight_number"].upper())
         if not re.fullmatch(r"[A-Z0-9]{2,3}[0-9]{1,5}[A-Z]?", flight):
             raise HomeAssistantError("Invalid flight number")
-        flight_date = call.data["date"]
         try:
             date.fromisoformat(flight_date)
         except ValueError as exc:
@@ -116,18 +126,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
         return {"flight_number": flight, "date": flight_date, "flights": matches, "count": len(matches)}
 
-    async def register_event(event) -> None:
-        parsed = parse_registration(event.data)
-        if parsed is None:
-            return
-        number, day, travelers = parsed
-        await store.upsert(number, day, travelers=travelers)
+    async def lookup(call: ServiceCall) -> dict:
+        return await lookup_flight_data(call.data["flight_number"], call.data["date"])
 
     async def scheduled_refresh(now) -> None:
         """Refresh known upcoming flights, skipping recently refreshed records.
 
-        The blueprint still performs its own 12-hour lookup; the 30-minute
-        offset and last-success guard avoid a second immediate request.
+        Successful lookup timestamps prevent repeat requests within 11 hours.
+        This timer is owned by the integration, not a per-flight blueprint.
         """
         for record in store.all():
             if record.get("finalized_at"):
@@ -154,8 +160,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 # Individual API failures must not prevent other flights.
                 _LOGGER.exception("Scheduled lookup failed for %s", record["id"])
 
-    remove_event = hass.bus.async_listen(EVENT, register_event)
-    entry.async_on_unload(remove_event)
     entry.async_on_unload(async_track_time_interval(
         hass, scheduled_refresh, timedelta(hours=12),
     ))
