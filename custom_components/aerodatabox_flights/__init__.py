@@ -86,6 +86,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "revised_departure_utc": revised.get("utc"),
                 "scheduled_arrival_utc": (arrival.get("scheduledTime") or {}).get("utc"),
             })
+        if matches:
+            await store.upsert(
+                flight, flight_date,
+                metadata=matches[0],
+            )
         return {"flight_number": flight, "date": flight_date, "flights": matches, "count": len(matches)}
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = store
