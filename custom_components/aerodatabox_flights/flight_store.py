@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from math import asin, cos, radians, sin, sqrt
-from typing import Any
+from typing import Any, Callable
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
@@ -46,6 +46,7 @@ class FlightStore:
     def __init__(self, hass: HomeAssistant) -> None:
         self._store = Store(hass, STORAGE_VERSION, f"{DOMAIN}.history")
         self._flights: dict[str, dict[str, Any]] = {}
+        self._listeners: list[Callable[[], None]] = []
 
     async def async_load(self) -> None:
         data = await self._store.async_load() or {}
@@ -53,6 +54,17 @@ class FlightStore:
 
     async def async_save(self) -> None:
         await self._store.async_save({"flights": self._flights})
+
+    def subscribe(self, callback: Callable[[], None]) -> Callable[[], None]:
+        self._listeners.append(callback)
+        def unsubscribe() -> None:
+            if callback in self._listeners:
+                self._listeners.remove(callback)
+        return unsubscribe
+
+    def _notify(self) -> None:
+        for callback in list(self._listeners):
+            callback()
 
     def get(self, number: str, departure_date: str) -> dict[str, Any] | None:
         return self._flights.get(flight_id(number, departure_date))
@@ -93,6 +105,7 @@ class FlightStore:
                 record["distance_type"] = "great_circle"
         self._flights[key] = record
         await self.async_save()
+        self._notify()
         return record.copy()
 
     async def finalize(
