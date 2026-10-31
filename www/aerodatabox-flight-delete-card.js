@@ -92,7 +92,7 @@ class AerodataboxFlightDeleteCard extends HTMLElement {
       try {
         await this._hass.callService("aerodatabox_flights", "save_flight", {
           flight_number, date: departure_date, travelers: this._draft.travelers
-        }, {}, true);
+        }, {}, true, true);
         this._draft = {flight:"",date:"",travelers:[]};
         this._render();
       } catch (err) {
@@ -145,7 +145,7 @@ class AerodataboxFlightDeleteCard extends HTMLElement {
           await this._hass.callService("aerodatabox_flights", "delete_flight", {
             flight_number: f.flight_number,
             date: f.departure_date
-          }, {}, true);
+          }, {}, true, true);
           // The integration publishes changed states; leave UI refresh to HA.
         } catch (err) {
           window.alert("Flight deletion failed: " + (err?.message || String(err)));
@@ -166,7 +166,7 @@ class AerodataboxFlightDeleteCard extends HTMLElement {
         try {
           await this._hass.callService("aerodatabox_flights", "set_flight_statistics_included", {
             flight_number: f.flight_number, date: f.departure_date, included: excluded
-          }, {}, true);
+          }, {}, true, true);
         } catch (err) {
           window.alert("Unable to change statistics: " + (err?.message || String(err)));
         } finally {
