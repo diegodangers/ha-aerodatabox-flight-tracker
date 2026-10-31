@@ -118,11 +118,22 @@ class FlightStore:
         self._notify()
         return True
 
+    async def note_registration_attempt(self, number: str, departure_date: str) -> None:
+        """Persist the attempted request BEFORE sending it to FR24."""
+        record = self._flights[flight_id(number, departure_date)]
+        record["tracking_last_attempt_at"] = datetime.now(timezone.utc).isoformat()
+        record["tracking_attempts"] = record.get("tracking_attempts", 0) + 1
+        record["tracking_status"] = "pending_confirmation"
+        await self.async_save()
+        self._notify()
+
     async def mark_registered(self, number: str, departure_date: str) -> None:
+        """Only call after the FR24 tracked sensor confirms the flight."""
         record = self._flights.get(flight_id(number, departure_date))
         if record is None or record.get("tracking_registered_at"):
             return
         record["tracking_registered_at"] = datetime.now(timezone.utc).isoformat()
+        record["tracking_status"] = "confirmed"
         await self.async_save()
         self._notify()
 
