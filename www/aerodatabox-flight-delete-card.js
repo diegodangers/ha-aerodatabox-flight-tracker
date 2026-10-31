@@ -109,7 +109,6 @@ class AerodataboxFlightDeleteCard extends HTMLElement {
       return;
     }
     const active = flights.filter(s => !s.attributes.finalized_at && !["landed", "canceled", "cancelled"].includes(String(s.state).toLowerCase()));
-    const history = flights.filter(s => !active.includes(s));
     const activeHeading = document.createElement("strong");
     activeHeading.textContent = "Upcoming / Active (" + active.length + ")";
     this._body.append(activeHeading);
@@ -118,12 +117,7 @@ class AerodataboxFlightDeleteCard extends HTMLElement {
       empty.textContent = "No active flights.";
       this._body.append(empty);
     }
-    for (const state of [...active, ...history]) {
-      if (history.includes(state) && state === history[0]) {
-        const heading = document.createElement("strong");
-        heading.textContent = "Completed / Canceled (" + history.length + ")";
-        this._body.append(heading);
-      }
+    for (const state of active) {
       const f = state.attributes;
       const row = document.createElement("div");
       row.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:12px";
