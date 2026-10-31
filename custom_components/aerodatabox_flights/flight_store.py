@@ -118,6 +118,20 @@ class FlightStore:
         self._notify()
         return True
 
+    async def mark_departed(self, number: str, departure_date: str) -> dict[str, Any]:
+        """Idempotently record takeoff without crediting mileage until landing."""
+        key = flight_id(number, departure_date)
+        record = self._flights.get(key)
+        if record is None:
+            raise KeyError(key)
+        if record.get("finalized_at") or record.get("departed_at"):
+            return record.copy()
+        record["status"] = "airborne"
+        record["departed_at"] = datetime.now(timezone.utc).isoformat()
+        await self.async_save()
+        self._notify()
+        return record.copy()
+
     async def finalize(
         self,
         number: str,
@@ -134,6 +148,7 @@ class FlightStore:
         record["status"] = status
         record["finalized_at"] = datetime.now(timezone.utc).isoformat()
         await self.async_save()
+        self._notify()
         return record.copy()
 
     def statistics(self) -> dict[str, Any]:
