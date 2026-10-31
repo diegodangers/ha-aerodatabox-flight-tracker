@@ -6,6 +6,7 @@ Person entity IDs are stored rather than display names.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from math import asin, cos, radians, sin, sqrt
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -14,6 +15,25 @@ from homeassistant.helpers.storage import Store
 from .const import DOMAIN
 
 STORAGE_VERSION = 1
+EARTH_RADIUS_MILES = 3958.7613
+
+
+def great_circle_miles(origin: dict | None, destination: dict | None) -> float | None:
+    """Straight-line miles; do not mistake this for flown aircraft distance."""
+    if not isinstance(origin, dict) or not isinstance(destination, dict):
+        return None
+    try:
+        lat1, lon1 = float(origin["lat"]), float(origin["lon"])
+        lat2, lon2 = float(destination["lat"]), float(destination["lon"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not (-90 <= lat1 <= 90 and -90 <= lat2 <= 90 and -180 <= lon1 <= 180 and -180 <= lon2 <= 180):
+        return None
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+    return round(2 * EARTH_RADIUS_MILES * asin(min(1, sqrt(a))), 1)
+
 
 
 def flight_id(number: str, departure_date: str) -> str:
@@ -67,6 +87,10 @@ class FlightStore:
         if metadata is not None:
             record["metadata"] = metadata
             record["metadata_updated_at"] = datetime.now(timezone.utc).isoformat()
+            miles = great_circle_miles(metadata.get("departure_coordinates"), metadata.get("arrival_coordinates"))
+            if miles is not None:
+                record["distance_miles"] = miles
+                record["distance_type"] = "great_circle"
         self._flights[key] = record
         await self.async_save()
         return record.copy()
@@ -102,6 +126,7 @@ class FlightStore:
                     data["miles"] += miles
         return {
             "total_flights": len(records),
+            "unique_completed_miles": round(sum(f.get("distance_miles") or 0 for f in completed), 1),
             "completed_flights": len(completed),
             "person": travelers,
         }
