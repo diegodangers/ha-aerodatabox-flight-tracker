@@ -257,6 +257,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         }
         records = store.all()
         for record in records:
+            # Live estimates are trusted only for a uniquely registered flight.
+            if not record.get("tracking_registered_at") or record.get("finalized_at"):
+                continue
+            duplicates = [other for other in records
+                          if other is not record
+                          and canonical_flight(other["flight_number"]) == canonical_flight(record["flight_number"])
+                          and not other.get("finalized_at")]
+            if duplicates:
+                continue
+            matches = [f for f in current if isinstance(f, dict)
+                       and canonical_flight(f.get("flight_number") or f.get("callsign") or "")
+                       == canonical_flight(record["flight_number"])
+                       and f.get("tracked_type") == "live"]
+            if len(matches) != 1:
+                continue
+            from datetime import datetime as _datetime
+            def timestamp_iso(value):
+                try:
+                    return _datetime.fromtimestamp(float(value), timezone.utc).isoformat() if value else None
+                except (ValueError, TypeError, OverflowError):
+                    return None
+            await store.update_estimates(
+                record["flight_number"], record["departure_date"],
+                departure=timestamp_iso(matches[0].get("time_estimated_departure")),
+                arrival=timestamp_iso(matches[0].get("time_estimated_arrival")),
+            )
+        for record in records:
             # FR24 omits dates for some tracked entries. Avoid falsely confirming
             # a different departure of the same flight number.
             duplicates = [
