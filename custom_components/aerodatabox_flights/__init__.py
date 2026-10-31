@@ -18,6 +18,7 @@ SERVICE_LOOKUP = "lookup_flight"
 SERVICE_SAVE_FLIGHT = "save_flight"
 SERVICE_LIST_FLIGHTS = "list_flights"
 SERVICE_FINALIZE_FLIGHT = "finalize_flight"
+SERVICE_DELETE_FLIGHT = "delete_flight"
 SCHEMA = vol.Schema({vol.Required("flight_number"): str, vol.Required("date"): str})
 
 def normalize_time(raw):
@@ -48,6 +49,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except KeyError as exc:
             raise HomeAssistantError("Flight has not been saved") from exc
         return {"flight": record}
+
+    async def delete_flight(call: ServiceCall) -> dict:
+        deleted = await store.delete(call.data["flight_number"], call.data["date"])
+        return {"deleted": deleted}
 
     async def lookup(call: ServiceCall) -> dict:
         flight = re.sub(r"\s+", "", call.data["flight_number"].upper())
@@ -121,6 +126,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
+        DOMAIN, SERVICE_DELETE_FLIGHT, delete_flight,
+        schema=SCHEMA, supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
         DOMAIN, SERVICE_FINALIZE_FLIGHT, finalize_flight,
         schema=vol.Schema({
             vol.Required("flight_number"): str,
@@ -142,4 +151,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_remove(DOMAIN, SERVICE_SAVE_FLIGHT)
     hass.services.async_remove(DOMAIN, SERVICE_LIST_FLIGHTS)
     hass.services.async_remove(DOMAIN, SERVICE_FINALIZE_FLIGHT)
+    hass.services.async_remove(DOMAIN, SERVICE_DELETE_FLIGHT)
     return True
