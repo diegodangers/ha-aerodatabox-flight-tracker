@@ -72,3 +72,44 @@ delete_flight:
       required: true
       selector:
         date: {}
+
+preview_flight_alert:
+  name: Preview flight alert
+  description: Show notification actions without sending them.
+  fields:
+    flight_number:
+      name: Flight number
+      required: true
+      selector:
+        text: {}
+    date:
+      name: Departure date
+      required: true
+      selector:
+        date: {}
+    event:
+      name: Event
+      required: true
+      selector:
+        select:
+          options:
+            - takeoff
+            - landing
+    phones:
+      name: Phone notify entities
+      selector:
+        entity:
+          domain: notify
+          multiple: true
+    alexas:
+      name: Alexa media players
+      selector:
+        entity:
+          domain: media_player
+          multiple: true
+    tv_services:
+      name: TV notify service names
+      description: Optional service names, without notify prefix.
+      selector:
+        text:
+          multiple: true
