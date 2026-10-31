@@ -60,6 +60,43 @@ def scheduled_start(record: dict, offset_hours: float = 2.0) -> datetime | None:
     return dt.astimezone(timezone.utc) - timedelta(hours=offset_hours)
 
 
+def within_registration_window(record: dict, now: datetime) -> bool:
+    """Only acknowledge FR24 tracking inside the predeparture handoff window."""
+    start = scheduled_start(record)
+    return bool(start and start <= now.astimezone(timezone.utc) < start + timedelta(hours=2))
+
+
+def valid_flight_event(record: dict, event_type: str, now: datetime) -> bool:
+    """Reject events for other daily occurrences and impossible flight sequences."""
+    if not record.get("tracking_registered_at"):
+        return False
+    meta = record.get("metadata") or {}
+    def parse(value):
+        if not value:
+            return None
+        try:
+            result = datetime.fromisoformat(str(value).replace("Z", "+00:00").replace(" ", "T"))
+            return result.astimezone(timezone.utc) if result.tzinfo else None
+        except (ValueError, TypeError):
+            return None
+    departure = parse(meta.get("revised_departure_utc")) or parse(meta.get("scheduled_departure_utc"))
+    arrival = parse(meta.get("scheduled_arrival_utc"))
+    current = now.astimezone(timezone.utc)
+    if not departure:
+        return False
+    if event_type == "flightradar24_tracked_took_off":
+        return departure - timedelta(hours=2) <= current <= departure + timedelta(hours=6)
+    if event_type == "flightradar24_tracked_landed":
+        departed_at = parse(record.get("departed_at"))
+        return bool(
+            departed_at and arrival
+            and departure < departed_at <= current
+            and current >= departure + timedelta(minutes=30)
+            and arrival - timedelta(hours=3) <= current <= arrival + timedelta(hours=8)
+        )
+    return False
+
+
 def retry_delay(attempts: int) -> timedelta:
     """15, 30, 60 minute backoff, capped at 60 minutes."""
     return timedelta(minutes=min(60, 15 * (2 ** min(max(attempts - 1, 0), 2))))
