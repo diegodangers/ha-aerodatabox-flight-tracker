@@ -1,0 +1,74 @@
+lookup_flight:
+  name: Look up flight
+  description: Retrieve flight schedule and update stored metadata.
+  fields:
+    flight_number:
+      name: Flight number
+      required: true
+      selector:
+        text: {}
+    date:
+      name: Departure date
+      required: true
+      selector:
+        date: {}
+save_flight:
+  name: Save flight
+  description: Add a new flight using AeroDataBox or update travelers on a saved flight.
+  fields:
+    flight_number:
+      name: Flight number
+      required: true
+      selector:
+        text: {}
+    date:
+      name: Departure date
+      required: true
+      selector:
+        date: {}
+    travelers:
+      name: Travelers
+      description: Select one or more Home Assistant people.
+      selector:
+        entity:
+          domain: person
+          multiple: true
+list_flights:
+  name: List flights
+  description: Return stored flight records and lifetime statistics.
+finalize_flight:
+  name: Finalize flight
+  description: Explicitly mark a stored flight landed or canceled.
+  fields:
+    flight_number:
+      name: Flight number
+      required: true
+      selector:
+        text: {}
+    date:
+      name: Departure date
+      required: true
+      selector:
+        date: {}
+    status:
+      name: Final status
+      required: true
+      selector:
+        select:
+          options:
+            - landed
+            - canceled
+delete_flight:
+  name: Delete flight
+  description: Permanently delete a saved flight record; does not delete automations.
+  fields:
+    flight_number:
+      name: Flight number
+      required: true
+      selector:
+        text: {}
+    date:
+      name: Departure date
+      required: true
+      selector:
+        date: {}
