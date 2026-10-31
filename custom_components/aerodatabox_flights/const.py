@@ -1,0 +1,5 @@
+"""Constants for AeroDataBox schedule queries."""
+DOMAIN = "aerodatabox_flights"
+CONF_API_KEY = "api_key"
+BASE_URL = "https://aerodatabox.p.rapidapi.com"
+API_HOST = "aerodatabox.p.rapidapi.com"
