@@ -27,7 +27,7 @@ class NotificationTests(unittest.TestCase):
         )
         self.assertEqual(len(actions), 3)
         self.assertEqual(actions[0]["data"]["entity_id"], ["notify.phone_a"])
-        self.assertIn("ATL to DTW", actions[0]["data"]["message"])
+        self.assertIn("ATL to DTW has taken off", actions[0]["data"]["message"])
         self.assertEqual(actions[1]["service"], "alexa_media")
         self.assertEqual(actions[2]["domain"], "notify")
 
