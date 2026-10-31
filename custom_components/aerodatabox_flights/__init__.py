@@ -18,7 +18,7 @@ import voluptuous as vol
 
 from .const import API_HOST, BASE_URL, CONF_API_KEY, DOMAIN
 from .flight_store import FlightStore
-from .fr24_lifecycle import matched_record, should_register, is_fr24_tracked, canonical_flight
+from .fr24_lifecycle import matched_record, should_register, is_fr24_tracked, canonical_flight, valid_flight_event, within_registration_window
 from .notifications import NATIVE_ALERTS_ENABLED, notification_plan
 from .notification_dispatch import deliver_event
 from .notification_config import selected_recipients, DEFAULT_RECIPIENTS
@@ -205,6 +205,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if record is None:
             _LOGGER.debug("Ignoring FR24 event without an unambiguous matching flight")
             return
+        if not valid_flight_event(record, event.event_type, dt_util.utcnow()):
+            _LOGGER.warning("Rejected out-of-window or unverified FR24 %s for %s", event.event_type, record["id"])
+            return
         try:
             if event.event_type == "flightradar24_tracked_took_off":
                 if record.get("departed_at"):
@@ -262,7 +265,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 and other["departure_date"] != record["departure_date"]
                 and not other.get("finalized_at")
             ]
-            if not duplicates and is_fr24_tracked(record, current):
+            if (not duplicates and record.get('tracking_last_attempt_at')
+                    and within_registration_window(record, now)
+                    and is_fr24_tracked(record, current)):
                 await store.mark_registered(record["flight_number"], record["departure_date"])
                 continue
             if duplicates or not should_register(record, tracked, now):
