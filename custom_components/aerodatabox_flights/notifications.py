@@ -19,8 +19,9 @@ def alert_message(record: dict[str, Any], event: str) -> tuple[str, str]:
     meta = record.get("metadata") or {}
     origin = meta.get("departure_airport") or "unknown origin"
     destination = meta.get("arrival_airport") or "unknown destination"
-    activity = "took off" if event == "takeoff" else "landed"
-    return (f"{flight} {activity}", f"{flight} {origin} to {destination} has {activity}.")
+    title = f"{flight} took off" if event == "takeoff" else f"{flight} landed"
+    activity = "taken off" if event == "takeoff" else "landed"
+    return (title, f"{flight} {origin} to {destination} has {activity}.")
 
 
 def in_alexa_hours(local: datetime) -> bool:
