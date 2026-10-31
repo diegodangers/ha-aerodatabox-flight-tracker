@@ -133,6 +133,16 @@ class FlightStore:
         self._notify()
         return record.copy()
 
+    async def set_statistics_included(self, number: str, day: str, included: bool) -> dict:
+        """Exclude a flight from metrics without altering tracking or history."""
+        key = flight_id(number, day)
+        if key not in self._flights:
+            raise KeyError(key)
+        self._flights[key]["include_in_statistics"] = included
+        await self.async_save()
+        self._notify()
+        return self._flights[key].copy()
+
     async def set_recipients(self, number: str, day: str, settings: dict) -> dict:
         key = flight_id(number, day)
         if key not in self._flights:
@@ -244,7 +254,8 @@ class FlightStore:
 
     def statistics(self) -> dict[str, Any]:
         records = list(self._flights.values())
-        completed = [f for f in records if f.get("status") == "landed"]
+        eligible = [f for f in records if f.get("include_in_statistics", True)]
+        completed = [f for f in eligible if f.get("status") == "landed"]
         travelers: dict[str, dict[str, int | float]] = {}
         for flight in completed:
             miles = flight.get("distance_miles")
@@ -254,9 +265,10 @@ class FlightStore:
                 if isinstance(miles, (int, float)):
                     data["miles"] += miles
         return {
-            "total_flights": len(records),
+            "total_flights": len(eligible),
+            "excluded_flights": len(records) - len(eligible),
             "unique_completed_miles": round(sum(f.get("distance_miles") or 0 for f in completed), 1),
             "completed_flights": len(completed),
             "person": travelers,
-            "airline_performance": punctuality(records),
+            "airline_performance": punctuality(eligible),
         }
