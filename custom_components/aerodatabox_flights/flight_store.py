@@ -108,6 +108,15 @@ class FlightStore:
         self._notify()
         return record.copy()
 
+    async def set_recipients(self, number: str, day: str, settings: dict) -> dict:
+        key = flight_id(number, day)
+        if key not in self._flights:
+            raise KeyError(key)
+        self._flights[key]["alert_recipients"] = dict(settings)
+        await self.async_save()
+        self._notify()
+        return self._flights[key].copy()
+
     async def delete(self, number: str, departure_date: str) -> bool:
         """Permanently remove a test record without touching other flights."""
         key = flight_id(number, departure_date)
