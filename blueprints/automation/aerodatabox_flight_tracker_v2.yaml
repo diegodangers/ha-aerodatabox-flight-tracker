@@ -89,6 +89,11 @@ actions:
     - condition: trigger
       id: check
     sequence:
+    - event: aerodatabox_flight_registered
+      event_data:
+        flight_number: "{{ flight_code }}"
+        departure_date: "{{ departure_date }}"
+        travelers: "{{ flight_travelers }}"
     - if:
       - condition: template
         value_template: "{{ now().date() >= (as_datetime(departure_date) - timedelta(days=2)).date()\n
