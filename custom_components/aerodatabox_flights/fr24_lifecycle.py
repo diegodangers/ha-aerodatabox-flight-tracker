@@ -6,7 +6,7 @@ saved dates, so it must not finalize any flight.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 import re
 
 
@@ -58,3 +58,19 @@ def scheduled_start(record: dict, offset_hours: float = 2.0) -> datetime | None:
         return None
     from datetime import timedelta
     return dt.astimezone(timezone.utc) - timedelta(hours=offset_hours)
+
+
+def should_register(record: dict, tracked_numbers: set[str], now: datetime) -> bool:
+    """Only register near departure; never queue old, finalized or already-tracked flights."""
+    if record.get("finalized_at") or record.get("tracking_registered_at"):
+        return False
+    if canonical_flight(record.get("flight_number", "")) in {
+        canonical_flight(number) for number in tracked_numbers
+    }:
+        return False
+    start = scheduled_start(record)
+    if start is None:
+        return False
+    departure = start + timedelta(hours=2)
+    current = now.astimezone(timezone.utc)
+    return start <= current < departure
