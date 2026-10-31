@@ -34,7 +34,15 @@ def matched_record(records: list[dict], payload: dict) -> dict | None:
         except ValueError:
             return None
         candidates = [item for item in candidates if item.get("departure_date") == day]
-    # No date and multiple candidates: never guess which departure was flown.
+    # No date: reject stale events and ambiguity; do not infer a flight across days.
+    if not day:
+        from datetime import timedelta
+        today = datetime.now(timezone.utc).date()
+        candidates = [
+            item for item in candidates
+            if today - timedelta(days=1) <= date.fromisoformat(item["departure_date"])
+               <= today + timedelta(days=2)
+        ]
     return candidates[0] if len(candidates) == 1 else None
 
 
