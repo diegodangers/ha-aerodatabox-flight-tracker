@@ -28,6 +28,7 @@ SERVICE_SAVE_FLIGHT = "save_flight"
 SERVICE_LIST_FLIGHTS = "list_flights"
 SERVICE_FINALIZE_FLIGHT = "finalize_flight"
 SERVICE_DELETE_FLIGHT = "delete_flight"
+SERVICE_SET_STATISTICS_INCLUDED = "set_flight_statistics_included"
 SERVICE_PREVIEW_ALERT = "preview_flight_alert"
 SERVICE_SET_RECIPIENTS = "set_flight_alert_recipients"
 SCHEMA = vol.Schema({vol.Required("flight_number"): str, vol.Required("date"): str})
@@ -76,6 +77,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def delete_flight(call: ServiceCall) -> dict:
         deleted = await store.delete(call.data["flight_number"], call.data["date"])
         return {"deleted": deleted}
+
+    async def set_flight_statistics_included(call: ServiceCall) -> dict:
+        try:
+            record = await store.set_statistics_included(
+                call.data["flight_number"], call.data["date"], call.data["included"]
+            )
+        except KeyError as exc:
+            raise HomeAssistantError("Flight has not been saved") from exc
+        return {"flight": record}
 
     async def set_flight_alert_recipients(call: ServiceCall) -> dict:
         try:
@@ -356,6 +366,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
+        DOMAIN, SERVICE_SET_STATISTICS_INCLUDED, set_flight_statistics_included,
+        schema=vol.Schema({
+            vol.Required("flight_number"): str,
+            vol.Required("date"): str,
+            vol.Required("included"): bool,
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
         DOMAIN, SERVICE_DELETE_FLIGHT, delete_flight,
         schema=SCHEMA, supports_response=SupportsResponse.ONLY,
     )
@@ -382,6 +401,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_remove(DOMAIN, SERVICE_LIST_FLIGHTS)
     hass.services.async_remove(DOMAIN, SERVICE_FINALIZE_FLIGHT)
     hass.services.async_remove(DOMAIN, SERVICE_DELETE_FLIGHT)
+    hass.services.async_remove(DOMAIN, SERVICE_SET_STATISTICS_INCLUDED)
     hass.services.async_remove(DOMAIN, SERVICE_PREVIEW_ALERT)
     hass.services.async_remove(DOMAIN, SERVICE_SET_RECIPIENTS)
     return True
