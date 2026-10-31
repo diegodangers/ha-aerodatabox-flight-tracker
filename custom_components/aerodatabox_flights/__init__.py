@@ -17,7 +17,7 @@ import voluptuous as vol
 
 from .const import API_HOST, BASE_URL, CONF_API_KEY, DOMAIN
 from .flight_store import FlightStore
-from .fr24_lifecycle import matched_record
+from .fr24_lifecycle import matched_record, should_register
 
 SERVICE_LOOKUP = "lookup_flight"
 SERVICE_SAVE_FLIGHT = "save_flight"
@@ -182,6 +182,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     for event_type in ("flightradar24_tracked_took_off", "flightradar24_tracked_landed"):
         entry.async_on_unload(hass.bus.async_listen(event_type, handle_fr24_event))
 
+    async def register_upcoming(now) -> None:
+        """Add due flights to FR24 while respecting existing blueprint registrations."""
+        if not hass.states.get("text.flightradar24_add_to_track"):
+            return
+        state = hass.states.get("sensor.flightradar24_additional_tracked")
+        current = state.attributes.get("flights", []) if state else []
+        tracked = {
+            str(f.get("flight_number", ""))
+            for f in current if isinstance(f, dict)
+        }
+        for record in store.all():
+            if not should_register(record, tracked, now):
+                continue
+            try:
+                await hass.services.async_call(
+                    "text", "set_value",
+                    {"entity_id": "text.flightradar24_add_to_track",
+                     "value": record["flight_number"]},
+                    blocking=True,
+                )
+            except Exception:
+                _LOGGER.exception("FR24 registration request failed for %s", record["id"])
+
+    entry.async_on_unload(async_track_time_interval(
+        hass, register_upcoming, timedelta(minutes=5),
+    ))
     entry.async_on_unload(async_track_time_interval(
         hass, scheduled_refresh, timedelta(hours=12),
     ))
