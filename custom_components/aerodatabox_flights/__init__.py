@@ -17,6 +17,7 @@ import voluptuous as vol
 
 from .const import API_HOST, BASE_URL, CONF_API_KEY, DOMAIN
 from .flight_store import FlightStore
+from .fr24_lifecycle import matched_record
 
 SERVICE_LOOKUP = "lookup_flight"
 SERVICE_SAVE_FLIGHT = "save_flight"
@@ -162,6 +163,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             except Exception:
                 # Individual API failures must not prevent other flights.
                 _LOGGER.exception("Scheduled lookup failed for %s", record["id"])
+
+    async def handle_fr24_event(event) -> None:
+        record = matched_record(store.all(), event.data)
+        if record is None:
+            _LOGGER.debug("Ignoring FR24 event without an unambiguous matching flight")
+            return
+        try:
+            if event.event_type == "flightradar24_tracked_took_off":
+                await store.mark_departed(record["flight_number"], record["departure_date"])
+            elif event.event_type == "flightradar24_tracked_landed":
+                await store.finalize(
+                    record["flight_number"], record["departure_date"], status="landed",
+                )
+        except Exception:
+            _LOGGER.exception("Could not record FR24 event for %s", record["id"])
+
+    for event_type in ("flightradar24_tracked_took_off", "flightradar24_tracked_landed"):
+        entry.async_on_unload(hass.bus.async_listen(event_type, handle_fr24_event))
 
     entry.async_on_unload(async_track_time_interval(
         hass, scheduled_refresh, timedelta(hours=12),
