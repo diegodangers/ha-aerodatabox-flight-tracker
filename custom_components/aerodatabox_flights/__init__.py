@@ -17,7 +17,7 @@ import voluptuous as vol
 
 from .const import API_HOST, BASE_URL, CONF_API_KEY, DOMAIN
 from .flight_store import FlightStore
-from .fr24_lifecycle import matched_record, should_register
+from .fr24_lifecycle import matched_record, should_register, is_fr24_tracked, canonical_flight
 
 SERVICE_LOOKUP = "lookup_flight"
 SERVICE_SAVE_FLIGHT = "save_flight"
@@ -183,18 +183,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.async_on_unload(hass.bus.async_listen(event_type, handle_fr24_event))
 
     async def register_upcoming(now) -> None:
-        """Add due flights to FR24 while respecting existing blueprint registrations."""
+        """Confirm from FR24 sensor first; only retry after persisted backoff."""
         if not hass.states.get("text.flightradar24_add_to_track"):
             return
         state = hass.states.get("sensor.flightradar24_additional_tracked")
-        current = state.attributes.get("flights", []) if state else []
+        if state is None or state.state in ("unknown", "unavailable"):
+            return  # FR24 unavailable: never send speculative duplicates
+        current = state.attributes.get("flights", [])
+        if not isinstance(current, list):
+            return
         tracked = {
-            str(f.get("flight_number", ""))
+            str(f.get("flight_number") or f.get("callsign") or "")
             for f in current if isinstance(f, dict)
         }
-        for record in store.all():
-            if not should_register(record, tracked, now):
+        records = store.all()
+        for record in records:
+            # FR24 omits dates for some tracked entries. Avoid falsely confirming
+            # a different departure of the same flight number.
+            duplicates = [
+                other for other in records
+                if canonical_flight(other["flight_number"]) == canonical_flight(record["flight_number"])
+                and other["departure_date"] != record["departure_date"]
+                and not other.get("finalized_at")
+            ]
+            if not duplicates and is_fr24_tracked(record, current):
+                await store.mark_registered(record["flight_number"], record["departure_date"])
                 continue
+            if duplicates or not should_register(record, tracked, now):
+                continue
+            # Persist the attempt before dispatch to avoid re-sending after a restart
+            # or if FR24's text service accepts a command but loses its response.
+            await store.note_registration_attempt(record["flight_number"], record["departure_date"])
             try:
                 await hass.services.async_call(
                     "text", "set_value",
