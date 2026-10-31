@@ -97,15 +97,21 @@ class FlightStore:
         else:
             record.setdefault("travelers", [])
         if metadata is not None:
-            previous = old.get("metadata") or {}
-            record["metadata"] = metadata
-            # Preserve initial schedule when the airline revises its estimates.
-            record["scheduled_departure_utc"] = old.get("scheduled_departure_utc") or previous.get("scheduled_departure_utc") or metadata.get("scheduled_departure_utc")
-            record["scheduled_arrival_utc"] = old.get("scheduled_arrival_utc") or previous.get("scheduled_arrival_utc") or metadata.get("scheduled_arrival_utc")
-            if metadata.get("revised_departure_utc"):
-                record["estimated_departure_utc"] = metadata["revised_departure_utc"]
-            if metadata.get("revised_arrival_utc"):
-                record["estimated_arrival_utc"] = metadata["revised_arrival_utc"]
+            # Once FR24 confirms tracking, AeroDataBox times are frozen.
+            if not old.get("tracking_registered_at"):
+                current_departure = metadata.get("revised_departure_utc") or metadata.get("scheduled_departure_utc")
+                current_arrival = metadata.get("revised_arrival_utc") or metadata.get("scheduled_arrival_utc")
+                record["metadata"] = {
+                    **metadata,
+                    "scheduled_departure_utc": current_departure,
+                    "scheduled_arrival_utc": current_arrival,
+                }
+                record["scheduled_departure_utc"] = current_departure
+                record["scheduled_arrival_utc"] = current_arrival
+                record.pop("estimated_departure_utc", None)
+                record.pop("estimated_arrival_utc", None)
+            else:
+                record["metadata"] = old.get("metadata") or metadata
             record["metadata_updated_at"] = datetime.now(timezone.utc).isoformat()
             miles = great_circle_miles(metadata.get("departure_coordinates"), metadata.get("arrival_coordinates"))
             if miles is not None:
