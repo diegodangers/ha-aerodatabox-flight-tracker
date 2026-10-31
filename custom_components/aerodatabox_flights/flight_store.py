@@ -117,6 +117,38 @@ class FlightStore:
         self._notify()
         return self._flights[key].copy()
 
+    async def reserve_delivery(self, number: str, departure_date: str, event: str,
+                               channel: str, recipient: str) -> bool:
+        """Persist reservation before dispatch; never implicitly retry."""
+        from .notification_dispatch import delivery_key
+        record = self._flights[flight_id(number, departure_date)]
+        ledger = record.setdefault("alert_delivery", {})
+        key = delivery_key(event, channel, recipient)
+        if key in ledger:
+            return False
+        ledger[key] = {"state": "reserved", "reserved_at": datetime.now(timezone.utc).isoformat()}
+        try:
+            await self.async_save()
+        except Exception:
+            ledger.pop(key, None)
+            raise
+        self._notify()
+        return True
+
+    async def resolve_delivery(self, number: str, departure_date: str, event: str,
+                               channel: str, recipient: str, success: bool,
+                               error: str | None = None) -> None:
+        """Record outcome; failed/uncertain alerts are not resent automatically."""
+        from .notification_dispatch import delivery_key
+        ledger = self._flights[flight_id(number, departure_date)].get("alert_delivery", {})
+        item = ledger[delivery_key(event, channel, recipient)]
+        item["state"] = "sent" if success else "failed"
+        item["resolved_at"] = datetime.now(timezone.utc).isoformat()
+        if error and not success:
+            item["error"] = str(error)[:160]
+        await self.async_save()
+        self._notify()
+
     async def delete(self, number: str, departure_date: str) -> bool:
         """Permanently remove a test record without touching other flights."""
         key = flight_id(number, departure_date)
