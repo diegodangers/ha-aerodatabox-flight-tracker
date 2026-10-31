@@ -13,6 +13,7 @@ from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.util import dt as dt_util
 import voluptuous as vol
 
 from .const import API_HOST, BASE_URL, CONF_API_KEY, DOMAIN
@@ -98,7 +99,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         return {
             "enabled": NATIVE_ALERTS_ENABLED,
             "actions": notification_plan(
-                record, call.data["event"], datetime.now().astimezone(),
+                record, call.data["event"], dt_util.now(),
                 (record.get("alert_recipients") or DEFAULT_RECIPIENTS)["phones"],
                 (record.get("alert_recipients") or DEFAULT_RECIPIENTS)["alexas"],
                 (record.get("alert_recipients") or DEFAULT_RECIPIENTS)["tv_services"],
@@ -222,7 +223,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if NATIVE_ALERTS_ENABLED:
                 selected = record.get("alert_recipients") or DEFAULT_RECIPIENTS
                 steps = notification_plan(
-                    record, alert, datetime.now().astimezone(),
+                    record, alert, dt_util.now(),
                     selected["phones"], selected["alexas"], selected["tv_services"],
                 tv_is_on=hass.states.is_state("media_player.family_room_tv", "on"),
                 )
