@@ -113,3 +113,35 @@ preview_flight_alert:
       selector:
         text:
           multiple: true
+
+set_flight_alert_recipients:
+  name: Set flight alert recipients
+  description: Save selected phone, Alexa and TV targets for a flight; never sends alerts.
+  fields:
+    flight_number:
+      name: Flight number
+      required: true
+      selector:
+        text: {}
+    date:
+      name: Departure date
+      required: true
+      selector:
+        date: {}
+    phones:
+      name: Selected phones
+      selector:
+        entity:
+          domain: notify
+          multiple: true
+    alexas:
+      name: Selected Alexa devices
+      selector:
+        entity:
+          domain: media_player
+          multiple: true
+    tv_services:
+      name: Selected TV notify service names
+      selector:
+        text:
+          multiple: true
