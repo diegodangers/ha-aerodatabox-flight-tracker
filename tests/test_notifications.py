@@ -48,5 +48,5 @@ class NotificationTests(unittest.TestCase):
         self.assertEqual([a["service"] for a in actions], ["send_message", "alexa_media"])
         self.assertEqual(len(actions[0]["data"]["entity_id"]), 2)
 
-    def test_is_disabled_for_migration(self):
-        self.assertFalse(module.NATIVE_ALERTS_ENABLED)
+    def test_enabled_for_coordinated_cutover(self):
+        self.assertTrue(module.NATIVE_ALERTS_ENABLED)
