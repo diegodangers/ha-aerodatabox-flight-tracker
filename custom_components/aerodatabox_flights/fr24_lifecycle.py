@@ -60,8 +60,34 @@ def scheduled_start(record: dict, offset_hours: float = 2.0) -> datetime | None:
     return dt.astimezone(timezone.utc) - timedelta(hours=offset_hours)
 
 
+def retry_delay(attempts: int) -> timedelta:
+    """15, 30, 60 minute backoff, capped at 60 minutes."""
+    return timedelta(minutes=min(60, 15 * (2 ** min(max(attempts - 1, 0), 2))))
+
+
+def is_fr24_tracked(record: dict, tracked: list[dict]) -> bool:
+    """Confirm by flight number AND date when FR24 supplies one.
+
+    The FR24 additional-tracked sensor generally does not expose the local
+    departure date. In that case only confirm if the record's number matches;
+    never make this check against ambiguous duplicate-date records.
+    """
+    expected = canonical_flight(record.get("flight_number", ""))
+    for flight in tracked:
+        if not isinstance(flight, dict):
+            continue
+        number = flight.get("flight_number") or flight.get("callsign")
+        if canonical_flight(number or "") != expected:
+            continue
+        day = flight.get("departure_date") or flight.get("flight_date")
+        if day and day != record.get("departure_date"):
+            continue
+        return True
+    return False
+
+
 def should_register(record: dict, tracked_numbers: set[str], now: datetime) -> bool:
-    """Only register near departure; never queue old, finalized or already-tracked flights."""
+    """Do not retry within backoff or after the scheduled departure."""
     if record.get("finalized_at") or record.get("tracking_registered_at"):
         return False
     if canonical_flight(record.get("flight_number", "")) in {
@@ -71,6 +97,17 @@ def should_register(record: dict, tracked_numbers: set[str], now: datetime) -> b
     start = scheduled_start(record)
     if start is None:
         return False
-    departure = start + timedelta(hours=2)
     current = now.astimezone(timezone.utc)
-    return start <= current < departure
+    if not (start <= current < start + timedelta(hours=2)):
+        return False
+    last = record.get("tracking_last_attempt_at")
+    if last:
+        try:
+            attempted = datetime.fromisoformat(last)
+            if attempted.tzinfo is None:
+                return False
+            if current < attempted.astimezone(timezone.utc) + retry_delay(int(record.get("tracking_attempts", 1))):
+                return False
+        except (ValueError, TypeError, OverflowError):
+            return False
+    return True
