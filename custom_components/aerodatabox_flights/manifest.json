@@ -1,0 +1,12 @@
+{
+  "domain": "aerodatabox_flights",
+  "name": "AeroDataBox Flight Schedules",
+  "version": "0.2.0",
+  "documentation": "https://aerodatabox.com/api-spec",
+  "issue_tracker": "https://github.com/diegodangers/ha-aerodatabox-flight-tracker/issues",
+  "config_flow": true,
+  "dependencies": [],
+  "codeowners": [],
+  "iot_class": "cloud_polling",
+  "requirements": []
+}
