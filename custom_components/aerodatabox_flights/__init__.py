@@ -164,10 +164,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "revised_arrival_utc": (arrival.get("revisedTime") or {}).get("utc"),
             })
         if matches:
-            await store.upsert(
-                flight, flight_date,
-                metadata=matches[0],
-            )
+            await store.upsert(flight, flight_date, metadata=matches[0])
+            current_record = store.get(flight, flight_date)
+            api_status = str(matches[0].get("status") or "").lower()
+            if api_status in ("canceled", "cancelled") and current_record and not current_record.get("finalized_at") and not current_record.get("departed_at"):
+                await store.finalize(flight, flight_date, status="canceled")
         return {"flight_number": flight, "date": flight_date, "flights": matches, "count": len(matches)}
 
     async def lookup(call: ServiceCall) -> dict:
@@ -207,6 +208,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 # Individual API failures must not prevent other flights.
                 _LOGGER.exception("Scheduled lookup failed for %s", record["id"])
 
+    def fr24_event_time(payload, kind):
+        """Use an explicit provider event time when available."""
+        keys = ("time_real_departure", "actual_departure", "takeoff_time") if kind == "takeoff" else ("time_real_arrival", "actual_arrival", "landing_time")
+        for key in keys:
+            value = payload.get(key)
+            if value is None:
+                continue
+            try:
+                if isinstance(value, (float, int)):
+                    parsed = datetime.fromtimestamp(value, timezone.utc)
+                else:
+                    parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00").replace(" ", "T"))
+                if parsed.tzinfo is not None and parsed <= datetime.now(timezone.utc):
+                    return parsed.astimezone(timezone.utc).isoformat()
+            except (ValueError, TypeError, OverflowError):
+                continue
+        return None
+
     async def handle_fr24_event(event) -> None:
         record = matched_record(store.all(), event.data)
         if record is None:
@@ -219,13 +238,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if event.event_type == "flightradar24_tracked_took_off":
                 if record.get("departed_at"):
                     return
-                await store.mark_departed(record["flight_number"], record["departure_date"])
+                await store.mark_departed(record["flight_number"], record["departure_date"], actual_time=fr24_event_time(event.data, "takeoff"))
                 alert = "takeoff"
             elif event.event_type == "flightradar24_tracked_landed":
                 if record.get("finalized_at"):
                     return
                 await store.finalize(
                     record["flight_number"], record["departure_date"], status="landed",
+                    actual_time=fr24_event_time(event.data, "landing"),
                 )
                 alert = "landing"
             else:
