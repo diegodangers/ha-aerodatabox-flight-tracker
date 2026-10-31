@@ -1,0 +1,68 @@
+"""Flight alert formatting and opt-in notification delivery.
+
+Disabled by default during migration to avoid duplicate blueprint alerts.
+The host integration must explicitly enable this after a live target audit.
+"""
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+# Migration safety: existing flight blueprints still send alerts.
+NATIVE_ALERTS_ENABLED = False
+
+
+def alert_message(record: dict[str, Any], event: str) -> tuple[str, str]:
+    if event not in ("takeoff", "landing"):
+        raise ValueError("Unsupported flight event")
+    flight = record["flight_number"]
+    meta = record.get("metadata") or {}
+    origin = meta.get("departure_airport") or "unknown origin"
+    destination = meta.get("arrival_airport") or "unknown destination"
+    activity = "took off" if event == "takeoff" else "landed"
+    return (f"{flight} {activity}", f"{flight} {origin} to {destination} has {activity}.")
+
+
+def in_alexa_hours(local: datetime) -> bool:
+    """Allowed: 07:00 inclusive until 22:00 exclusive, using HA local time."""
+    return 7 <= local.hour < 22
+
+
+def notification_plan(
+    record: dict[str, Any], event: str, local_now: datetime,
+    phones: list[str], alexas: list[str], televisions: list[str],
+) -> list[dict[str, Any]]:
+    title, message = alert_message(record, event)
+    steps: list[dict[str, Any]] = []
+    if phones:
+        steps.append({
+            "domain": "notify", "service": "send_message",
+            "data": {"entity_id": sorted(set(phones)), "title": title, "message": message},
+        })
+    if alexas and in_alexa_hours(local_now):
+        steps.append({
+            "domain": "notify", "service": "alexa_media",
+            "data": {"target": sorted(set(alexas)), "message": message, "data": {"type": "announce"}},
+        })
+    for service in sorted(set(televisions)):
+        steps.append({
+            "domain": "notify", "service": service,
+            "data": {"title": title, "message": message},
+        })
+    return steps
+
+
+async def dispatch_plan(hass, steps: list[dict[str, Any]]) -> list[str]:
+    """Dispatch supported actions; caller owns idempotence and opt-in."""
+    errors = []
+    for step in steps:
+        if not hass.services.has_service(step["domain"], step["service"]):
+            errors.append(f"Unavailable: {step['domain']}.{step['service']}")
+            continue
+        try:
+            await hass.services.async_call(
+                step["domain"], step["service"], step["data"], blocking=True,
+            )
+        except Exception as exc:
+            errors.append(f"{step['domain']}.{step['service']}: {type(exc).__name__}")
+    return errors
