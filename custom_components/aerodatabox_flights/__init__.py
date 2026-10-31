@@ -187,11 +187,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return
         try:
             if event.event_type == "flightradar24_tracked_took_off":
+                if record.get("departed_at"):
+                    return
                 await store.mark_departed(record["flight_number"], record["departure_date"])
+                alert = "takeoff"
             elif event.event_type == "flightradar24_tracked_landed":
+                if record.get("finalized_at"):
+                    return
                 await store.finalize(
                     record["flight_number"], record["departure_date"], status="landed",
                 )
+                alert = "landing"
+            else:
+                return
+            if NATIVE_ALERTS_ENABLED:
+                # Target routing is deliberately empty until explicitly configured
+                # and verified; legacy automations remain responsible for delivery.
+                steps = notification_plan(
+                    record, alert, datetime.now().astimezone(), [], [], [],
+                )
+                errors = await dispatch_plan(hass, steps)
+                for error in errors:
+                    _LOGGER.warning("Flight notification failure: %s", error)
         except Exception:
             _LOGGER.exception("Could not record FR24 event for %s", record["id"])
 
