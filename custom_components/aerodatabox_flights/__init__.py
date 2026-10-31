@@ -70,8 +70,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         deleted = await store.delete(call.data["flight_number"], call.data["date"])
         return {"deleted": deleted}
 
-    async def lookup(call: ServiceCall) -> dict:
-        flight = re.sub(r"\s+", "", call.data["flight_number"].upper())
+    async def lookup_flight_data(number: str, flight_date: str) -> dict:
+        flight = re.sub(r"\\s+", "", number.upper())
         if not re.fullmatch(r"[A-Z0-9]{2,3}[0-9]{1,5}[A-Z]?", flight):
             raise HomeAssistantError("Invalid flight number")
         try:
@@ -125,6 +125,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 metadata=matches[0],
             )
         return {"flight_number": flight, "date": flight_date, "flights": matches, "count": len(matches)}
+
+    async def lookup(call: ServiceCall) -> dict:
+        return await lookup_flight_data(call.data["flight_number"], call.data["date"])
 
     async def lookup(call: ServiceCall) -> dict:
         return await lookup_flight_data(call.data["flight_number"], call.data["date"])
