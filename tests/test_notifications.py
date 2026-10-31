@@ -38,5 +38,15 @@ class NotificationTests(unittest.TestCase):
         )
         self.assertEqual([a["service"] for a in actions], ["send_message", "android_tv_fire_tv_192_168_68_72"])
 
+    def test_tv_filtered_when_off(self):
+        actions = module.notification_plan(
+            RECORD, "takeoff", datetime(2026, 10, 31, 12),
+            ["notify.diego_2", "notify.keris_iphone"],
+            ["media_player.living_room_alexa"],
+            ["android_tv_fire_tv_192_168_68_72"], tv_is_on=False,
+        )
+        self.assertEqual([a["service"] for a in actions], ["send_message", "alexa_media"])
+        self.assertEqual(len(actions[0]["data"]["entity_id"]), 2)
+
     def test_is_disabled_for_migration(self):
         self.assertFalse(module.NATIVE_ALERTS_ENABLED)
