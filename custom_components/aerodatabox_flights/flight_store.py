@@ -13,6 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN
+from .airline_performance import punctuality
 
 STORAGE_VERSION = 1
 EARTH_RADIUS_MILES = 3958.7613
@@ -97,6 +98,16 @@ class FlightStore:
         else:
             record.setdefault("travelers", [])
         if metadata is not None:
+            # Snapshot the first published schedule for future delay statistics.
+            prior = old.get("metadata") or {}
+            record["published_departure_utc"] = (
+                old.get("published_departure_utc") or prior.get("published_departure_utc")
+                or prior.get("scheduled_departure_utc") or metadata.get("scheduled_departure_utc")
+            )
+            record["published_arrival_utc"] = (
+                old.get("published_arrival_utc") or prior.get("published_arrival_utc")
+                or prior.get("scheduled_arrival_utc") or metadata.get("scheduled_arrival_utc")
+            )
             # Once FR24 confirms tracking, AeroDataBox times are frozen.
             if not old.get("tracking_registered_at"):
                 current_departure = metadata.get("revised_departure_utc") or metadata.get("scheduled_departure_utc")
@@ -244,4 +255,5 @@ class FlightStore:
             "unique_completed_miles": round(sum(f.get("distance_miles") or 0 for f in completed), 1),
             "completed_flights": len(completed),
             "person": travelers,
+            "airline_performance": punctuality(records),
         }
