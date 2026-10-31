@@ -17,6 +17,7 @@ from .flight_store import FlightStore
 SERVICE_LOOKUP = "lookup_flight"
 SERVICE_SAVE_FLIGHT = "save_flight"
 SERVICE_LIST_FLIGHTS = "list_flights"
+SERVICE_FINALIZE_FLIGHT = "finalize_flight"
 SCHEMA = vol.Schema({vol.Required("flight_number"): str, vol.Required("date"): str})
 
 def normalize_time(raw):
@@ -37,6 +38,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def list_flights(call: ServiceCall) -> dict:
         return {"flights": store.all(), "statistics": store.statistics()}
+
+    async def finalize_flight(call: ServiceCall) -> dict:
+        try:
+            record = await store.finalize(
+                call.data["flight_number"], call.data["date"],
+                status=call.data["status"],
+            )
+        except KeyError as exc:
+            raise HomeAssistantError("Flight has not been saved") from exc
+        return {"flight": record}
 
     async def lookup(call: ServiceCall) -> dict:
         flight = re.sub(r"\s+", "", call.data["flight_number"].upper())
@@ -80,7 +91,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "status": item.get("status"),
                 "departure_airport": (departure.get("airport") or {}).get("iata"),
                 "departure_airport_name": (departure.get("airport") or {}).get("name"),
+                "departure_coordinates": (departure.get("airport") or {}).get("location"),
                 "arrival_airport": (arrival.get("airport") or {}).get("iata"),
+                "arrival_coordinates": (arrival.get("airport") or {}).get("location"),
                 "scheduled_departure_utc": scheduled.get("utc"),
                 "scheduled_departure_local": scheduled.get("local"),
                 "revised_departure_utc": revised.get("utc"),
@@ -107,6 +120,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         DOMAIN, SERVICE_LIST_FLIGHTS, list_flights,
         supports_response=SupportsResponse.ONLY,
     )
+    hass.services.async_register(
+        DOMAIN, SERVICE_FINALIZE_FLIGHT, finalize_flight,
+        schema=vol.Schema({
+            vol.Required("flight_number"): str,
+            vol.Required("date"): str,
+            vol.Required("status"): vol.In(["landed", "canceled"]),
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
     hass.services.async_register(DOMAIN, SERVICE_LOOKUP, lookup, schema=SCHEMA,
                                  supports_response=SupportsResponse.ONLY)
     return True
@@ -116,4 +138,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_remove(DOMAIN, SERVICE_LOOKUP)
     hass.services.async_remove(DOMAIN, SERVICE_SAVE_FLIGHT)
     hass.services.async_remove(DOMAIN, SERVICE_LIST_FLIGHTS)
+    hass.services.async_remove(DOMAIN, SERVICE_FINALIZE_FLIGHT)
     return True
