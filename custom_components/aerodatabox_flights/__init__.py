@@ -59,6 +59,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         record = await store.upsert(
             number, day, travelers=call.data.get("travelers"),
         )
+        # Apply integration defaults only to newly created flights.
+        if existing is None:
+            choices = entry.options
+            tv_raw = choices.get("tv_services", "")
+            tv_services = [s.strip() for s in tv_raw.split(",") if s.strip()] if isinstance(tv_raw, str) else list(tv_raw)
+            recipients = selected_recipients(
+                list(choices.get("phones", [])),
+                list(choices.get("alexas", [])),
+                tv_services,
+            )
+            recipients["alexa_quiet_start"] = choices.get("alexa_quiet_start", "22:00")
+            recipients["alexa_quiet_end"] = choices.get("alexa_quiet_end", "07:00")
+            record = await store.set_recipients(number, day, recipients)
         return {"flight": record}
 
     async def list_flights(call: ServiceCall) -> dict:
