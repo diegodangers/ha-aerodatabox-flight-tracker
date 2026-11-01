@@ -77,9 +77,9 @@ class AerodataboxFlightDeleteCard extends HTMLElement {
     form.append(title, number, date, travelers, save);
     form.addEventListener("submit", async event => {
       event.preventDefault();
-      const flight_number = this._draft.flight.toUpperCase().replace(/\\s+/g, "");
+      const flight_number = this._draft.flight.toUpperCase().replace(/\s+/g, "");
       const departure_date = this._draft.date;
-      if (!/^[A-Z0-9]{2,3}[0-9]{1,5}[A-Z]?$/.test(flight_number) || !/^\\d{4}-\\d{2}-\\d{2}$/.test(departure_date)) {
+      if (!/^[A-Z0-9]{2,3}[0-9]{1,5}[A-Z]?$/.test(flight_number) || !/^\d{4}-\d{2}-\d{2}$/.test(departure_date)) {
         window.alert("Enter a valid flight number and departure date.");
         return;
       }
