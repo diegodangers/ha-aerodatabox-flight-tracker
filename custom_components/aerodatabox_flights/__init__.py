@@ -112,7 +112,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
         except (ValueError, KeyError) as exc:
             raise HomeAssistantError(str(exc)) from exc
-        return {"enabled": False, "recipients": record["alert_recipients"]}
+        return {"enabled": NATIVE_ALERTS_ENABLED, "recipients": record["alert_recipients"]}
 
     async def preview_flight_alert(call: ServiceCall) -> dict:
         """Show exact routing without delivering an alert."""
