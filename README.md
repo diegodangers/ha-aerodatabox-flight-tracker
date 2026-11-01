@@ -1,33 +1,45 @@
-# ha-aerodatabox-flight-tracker
-AeroDataBox flight tracking and travel history integration for Home Assistant
+# SkyLedger
 
-## Saved-flight delete card (development branch)
+Home Assistant flight tracking, travel history, notifications and airline reliability.
 
-The integration includes a frontend Lovelace card at `www/aerodatabox-flight-delete-card.js`.
-It lists current saved flight sensors and deletes **only the selected flight** via the
-existing `aerodatabox_flights.delete_flight` service. Each deletion requires a
-confirmation showing the flight, departure date, and route. Deletion permanently
-removes its saved history and recalculates statistics. It does **not** issue an
-FR24 removal request; a flight-number-only removal could affect another day's
-flight. Manage FR24 tracking separately.
+**Development/migration stage.** The user-visible integration name is SkyLedger.
+The internal domain remains `aerodatabox_flights` for compatibility with existing
+config entries, storage, sensors and services. Do **not** rename or delete the
+existing integration to migrate; a safe domain/storage migration is still required.
 
-With Home Assistant Terminal & SSH, from the **extracted development branch**:
+## Native configuration
 
-```sh
-mkdir -p /config/www
-cp /tmp/ha-aerodatabox-flight-tracker-feature-flight-history/www/aerodatabox-flight-delete-card.js /config/www/
-```
+After installing and restarting, open Settings → Devices & Services → SkyLedger →
+Configure to set approved phone, Alexa/media player and TV notification recipients
+and Alexa quiet hours. These defaults apply to **new flights only**; existing
+flight-specific recipient settings are preserved. New destinations are not
+automatically approved. The Add Flight card no longer requires selecting recipients.
 
-In Home Assistant **Settings → Dashboards → Resources**, add a **JavaScript module**
-resource at `/local/aerodatabox-flight-delete-card.js`. (If Resources are hidden,
-enable Advanced Mode for your Home Assistant user.) Then add a **Manual** card to
-the Flights dashboard:
+The schedule provider is currently AeroDataBox, and live tracking uses
+Flightradar24. Provider independence is an architectural goal, not yet an
+implemented provider-switching capability.
+
+## Flights dashboard
+
+The current user's Flights dashboard is a storage-mode Lovelace dashboard and is
+**not automatically deployed** by the integration or by installing its Python
+files. Existing dashboards remain as-is on upgrade. The optional Flight Manager
+frontend is in `www/aerodatabox-flight-delete-card.js`. Copy it to
+`/config/www/`, register it as a JavaScript module resource at
+`/local/aerodatabox-flight-delete-card.js`, and add:
 
 ```yaml
 type: custom:aerodatabox-flight-delete-card
-title: Manage saved flights
+title: Flight Manager
 ```
 
-The standard development-branch integration install copies
-`custom_components/aerodatabox_flights` only; it does **not** automatically
-install this separate frontend resource. No HACS installation is necessary.
+The rest of the existing Flights dashboard contains views/cards configured in
+Home Assistant and is not bundled for automatic installation. A portable,
+opt-in dashboard template is future work. Installing this integration must not
+replace an existing user's Lovelace dashboard.
+
+## Flight management
+
+The existing services under `aerodatabox_flights` remain valid during
+migration, including `save_flight`, `delete_flight`, and
+`set_flight_statistics_included`.
