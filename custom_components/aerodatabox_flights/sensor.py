@@ -4,7 +4,7 @@ from __future__ import annotations
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import EntityCategory
+from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
 
@@ -12,6 +12,21 @@ from .const import DOMAIN
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     store = hass.data[DOMAIN][entry.entry_id]
     known: dict[str, FlightSensor] = {}
+    registry = er.async_get(hass)
+    prefix = f"{entry.entry_id}_flight_"
+
+    def clean_orphaned_registry_entries() -> None:
+        """Only prune our flight sensors that no longer have saved records."""
+        active = {f"{prefix}{record['id']}" for record in store.all()}
+        for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+            if (
+                entity.domain == "sensor"
+                and entity.platform == DOMAIN
+                and entity.unique_id.startswith(prefix)
+                and entity.unique_id not in active
+            ):
+                registry.async_remove(entity.entity_id)
+
     summary = FlightSummarySensor(store, entry.entry_id)
     async_add_entities([summary])
 
@@ -32,7 +47,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         for key in list(known):
             if key not in remaining:
                 sensor = known.pop(key)
-                hass.async_create_task(sensor.async_remove())
+                async def remove_flight_sensor(sensor_to_remove: FlightSensor) -> None:
+                    await sensor_to_remove.async_remove()
+                    clean_orphaned_registry_entries()
+
+                hass.async_create_task(remove_flight_sensor(sensor))
         summary.async_write_ha_state()
 
     # Initial registration must occur without writing states before HA adds entities.
@@ -44,6 +63,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     if initial:
         async_add_entities(initial)
 
+    clean_orphaned_registry_entries()
     entry.async_on_unload(store.subscribe(refresh))
 
 
