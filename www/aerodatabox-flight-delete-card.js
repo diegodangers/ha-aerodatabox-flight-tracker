@@ -89,7 +89,7 @@ class AerodataboxFlightDeleteCard extends HTMLElement {
       labelHeading.textContent = heading + ":";
       group.append(labelHeading);
       const targets = choices[key];
-      if (this._draft[key] === null) this._draft[key] = [...targets];
+      if (this._draft[key] === null) this._draft[key] = [];
       for (const id of targets) {
         const label = document.createElement("label");
         label.style.cssText = "display:inline-flex;align-items:center;gap:5px";
