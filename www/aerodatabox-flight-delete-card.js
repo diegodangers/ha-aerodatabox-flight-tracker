@@ -70,53 +70,14 @@ class AerodataboxFlightDeleteCard extends HTMLElement {
       label.append(check, document.createTextNode(person.attributes.friendly_name || person.entity_id));
       travelers.append(label);
     }
-    // Choices are derived from configured flight recipients and available entities.
-    const saved = flights.map(f => f.attributes.alert_recipients || {});
-    const unique = key => [...new Set(saved.flatMap(r => r[key] || []))];
-    const choices = {
-      phones: [...new Set([...unique("phones"), ...Object.keys(this._hass.states).filter(id => id.startsWith("notify."))])],
-      alexas: unique("alexas"),
-      tv_services: unique("tv_services")
-    };
-    const notifications = document.createElement("fieldset");
-    const notifyLegend = document.createElement("legend");
-    notifyLegend.textContent = "Who should receive alerts?";
-    notifications.append(notifyLegend);
-    for (const [key, heading] of [["phones", "Phones"], ["alexas", "Alexa"], ["tv_services", "TVs"]]) {
-      const group = document.createElement("div");
-      group.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin:8px 0";
-      const labelHeading = document.createElement("strong");
-      labelHeading.textContent = heading + ":";
-      group.append(labelHeading);
-      const targets = choices[key];
-      if (this._draft[key] === null) this._draft[key] = [];
-      for (const id of targets) {
-        const label = document.createElement("label");
-        label.style.cssText = "display:inline-flex;align-items:center;gap:5px";
-        const check = document.createElement("input");
-        check.type = "checkbox";
-        check.checked = this._draft[key].includes(id);
-        check.addEventListener("change", () => {
-          const selection = new Set(this._draft[key]);
-          if (check.checked) selection.add(id); else selection.delete(id);
-          this._draft[key] = [...selection];
-        });
-        const display = this._hass.states[id]?.attributes?.friendly_name || id.replace(/^notify\\./, "").replace(/_/g, " ");
-        label.append(check, document.createTextNode(display));
-        group.append(label);
-      }
-      if (!targets.length) {
-        const empty = document.createElement("span");
-        empty.textContent = "No configured targets";
-        group.append(empty);
-      }
-      notifications.append(group);
-    }
+    const notice = document.createElement("div");
+    notice.style.cssText = "color:var(--secondary-text-color);font-size:0.85em";
+    notice.textContent = "Notification defaults: Settings → Devices & Services → SkyLedger → Configure";
     const save = document.createElement("button");
     save.type = "submit";
     save.textContent = "Add Flight";
     save.style.cssText = "padding:10px;border:1px solid var(--divider-color);border-radius:8px;cursor:pointer";
-    form.append(title, number, date, travelers, notifications, save);
+    form.append(title, number, date, travelers, notice, save);
     form.addEventListener("submit", async event => {
       event.preventDefault();
       const flight_number = this._draft.flight.toUpperCase().replace(/\s+/g, "");
@@ -134,12 +95,6 @@ class AerodataboxFlightDeleteCard extends HTMLElement {
       try {
         await this._hass.callService("aerodatabox_flights", "save_flight", {
           flight_number, date: departure_date, travelers: this._draft.travelers
-        }, {}, true, true);
-        await this._hass.callService("aerodatabox_flights", "set_flight_alert_recipients", {
-          flight_number, date: departure_date,
-          phones: this._draft.phones || [],
-          alexas: this._draft.alexas || [],
-          tv_services: this._draft.tv_services || []
         }, {}, true, true);
         this._draft = {flight:"",date:"",travelers:[],phones:null,alexas:null,tv_services:null};
         this._render();
