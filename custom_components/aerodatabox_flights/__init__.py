@@ -362,6 +362,66 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     for event_type in ("flightradar24_tracked_took_off", "flightradar24_tracked_landed"):
         entry.async_on_unload(hass.bus.async_listen(event_type, handle_fr24_event))
 
+    async def capture_aircraft_from_fr24(flights: list[dict]) -> None:
+        """Backfill current and historical records only from verified live data."""
+        for flight in flights:
+            if not isinstance(flight, dict) or not flight.get("aircraft_registration"):
+                continue
+            # FR24 schedule placeholders do not identify a flown aircraft.
+            if flight.get("tracked_type") != "live":
+                continue
+            number = canonical_flight(flight.get("flight_number") or flight.get("callsign") or "")
+            origin = flight.get("airport_origin_code_iata")
+            destination = flight.get("airport_destination_code_iata")
+            candidates = [
+                record for record in store.all()
+                if canonical_flight(record["flight_number"]) == number
+                and (record.get("metadata") or {}).get("departure_airport") == origin
+                and (record.get("metadata") or {}).get("arrival_airport") == destination
+            ]
+            # A live FR24 record must not be attached to another day's flight.
+            departure_epoch = flight.get("time_scheduled_departure")
+            if departure_epoch:
+                try:
+                    departure_utc = datetime.fromtimestamp(float(departure_epoch), timezone.utc)
+                    candidates = [
+                        record for record in candidates
+                        if record.get("published_departure_utc")
+                        and abs((datetime.fromisoformat(
+                            str(record["published_departure_utc"]).replace("Z", "+00:00").replace(" ", "T")
+                        ) - departure_utc).total_seconds()) <= 12 * 3600
+                    ]
+                except (ValueError, TypeError, OverflowError):
+                    candidates = []
+            elif len(candidates) == 1:
+                # No provider date: only accept a recent occurrence.
+                candidates = [
+                    record for record in candidates
+                    if record.get("published_arrival_utc")
+                    and abs((dt_util.utcnow() - datetime.fromisoformat(
+                        str(record["published_arrival_utc"]).replace("Z", "+00:00").replace(" ", "T")
+                    )).total_seconds()) <= 48 * 3600
+                ]
+            else:
+                candidates = []
+            if len(candidates) != 1:
+                continue
+            record = candidates[0]
+            aircraft = {
+                "registration": flight["aircraft_registration"],
+                "model": flight.get("aircraft_model"),
+                "code": flight.get("aircraft_code"),
+                "photo_small": flight.get("aircraft_photo_small"),
+                "photo_medium": flight.get("aircraft_photo_medium"),
+                "photo_large": flight.get("aircraft_photo_large"),
+            }
+            current = record.get("aircraft") or {}
+            if current.get("registration") == aircraft["registration"] and all(
+                not value or current.get(key) == value for key, value in aircraft.items()
+            ):
+                continue
+            await store.set_aircraft(record["flight_number"], record["departure_date"], aircraft)
+
     async def register_upcoming(now) -> None:
         """Confirm from FR24 sensor first; only retry after persisted backoff."""
         if not hass.states.get("text.flightradar24_add_to_track"):
@@ -372,6 +432,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         current = state.attributes.get("flights", [])
         if not isinstance(current, list):
             return
+        await capture_aircraft_from_fr24(current)
         tracked = {
             str(f.get("flight_number") or f.get("callsign") or "")
             for f in current if isinstance(f, dict)
