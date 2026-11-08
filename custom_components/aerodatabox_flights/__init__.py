@@ -31,6 +31,7 @@ SERVICE_DELETE_FLIGHT = "delete_flight"
 SERVICE_SET_STATISTICS_INCLUDED = "set_flight_statistics_included"
 SERVICE_PREVIEW_ALERT = "preview_flight_alert"
 SERVICE_SET_RECIPIENTS = "set_flight_alert_recipients"
+SERVICE_SET_AIRCRAFT = "set_flight_aircraft"
 SCHEMA = vol.Schema({vol.Required("flight_number"): str, vol.Required("date"): str})
 
 def normalize_time(raw):
@@ -188,6 +189,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
             for recipient in result["errors"]:
                 _LOGGER.warning("Fallback flight notification failed for %s: %s", record["id"], recipient)
+
+    async def set_flight_aircraft(call: ServiceCall) -> dict:
+        """Backfill a verified aircraft registration into a saved flight."""
+        try:
+            aircraft = {
+                "registration": call.data["registration"],
+                "model": call.data.get("model"),
+                "code": call.data.get("code"),
+                "photo_small": call.data.get("photo_small"),
+                "photo_medium": call.data.get("photo_medium"),
+                "photo_large": call.data.get("photo_large"),
+                "jetphotos_url": (
+                    "https://www.jetphotos.com/registration/"
+                    + quote(call.data["registration"].strip().upper())
+                ),
+            }
+            record = await store.set_aircraft(
+                call.data["flight_number"], call.data["date"], aircraft
+            )
+        except (KeyError, ValueError) as exc:
+            raise HomeAssistantError(str(exc)) from exc
+        return {"flight": record}
 
     async def lookup_flight_data(number: str, flight_date: str) -> dict:
         # No further AeroDataBox requests after successful FR24 handoff.
@@ -512,6 +535,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
+        DOMAIN, SERVICE_SET_AIRCRAFT, set_flight_aircraft,
+        schema=vol.Schema({
+            vol.Required("flight_number"): str,
+            vol.Required("date"): str,
+            vol.Required("registration"): str,
+            vol.Optional("model"): str,
+            vol.Optional("code"): str,
+            vol.Optional("photo_small"): str,
+            vol.Optional("photo_medium"): str,
+            vol.Optional("photo_large"): str,
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
         DOMAIN, SERVICE_SET_STATISTICS_INCLUDED, set_flight_statistics_included,
         schema=vol.Schema({
             vol.Required("flight_number"): str,
@@ -550,4 +587,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_remove(DOMAIN, SERVICE_SET_STATISTICS_INCLUDED)
     hass.services.async_remove(DOMAIN, SERVICE_PREVIEW_ALERT)
     hass.services.async_remove(DOMAIN, SERVICE_SET_RECIPIENTS)
+    hass.services.async_remove(DOMAIN, SERVICE_SET_AIRCRAFT)
     return True
