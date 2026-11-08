@@ -400,7 +400,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 await hass.services.async_call(
                     "text", "set_value",
                     {"entity_id": "text.flightradar24_add_to_track",
-                     "value": record["flight_number"]},
+                     "value": canonical_flight(record["flight_number"])},
                     blocking=True,
                 )
             except Exception:
