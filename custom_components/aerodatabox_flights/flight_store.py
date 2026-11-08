@@ -133,6 +133,27 @@ class FlightStore:
         self._notify()
         return record.copy()
 
+    async def set_aircraft(self, number: str, departure_date: str, aircraft: dict) -> dict:
+        """Persist verified aircraft information without changing flight status."""
+        import re
+        key = flight_id(number, departure_date)
+        record = self._flights.get(key)
+        if record is None:
+            raise KeyError(key)
+        registration = str(aircraft.get("registration") or "").strip().upper()
+        if not re.fullmatch(r"[A-Z0-9-]{2,12}", registration):
+            raise ValueError("Valid aircraft registration required")
+        old = record.get("aircraft") or {}
+        merged = ({**old, **{k: v for k, v in aircraft.items() if v}}
+                  if old.get("registration") == registration else
+                  {k: v for k, v in aircraft.items() if v})
+        merged.update(registration=registration, source="flightradar24",
+                      updated_at=datetime.now(timezone.utc).isoformat())
+        record["aircraft"] = merged
+        await self.async_save()
+        self._notify()
+        return record.copy()
+
     async def set_statistics_included(self, number: str, day: str, included: bool) -> dict:
         """Exclude a flight from metrics without altering tracking or history."""
         key = flight_id(number, day)
