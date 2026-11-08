@@ -409,6 +409,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             record = candidates[0]
             aircraft = {
                 "registration": flight["aircraft_registration"],
+                "jetphotos_url": f"https://www.jetphotos.com/registration/{quote(str(flight['aircraft_registration']).upper())}",
                 "model": flight.get("aircraft_model"),
                 "code": flight.get("aircraft_code"),
                 "photo_small": flight.get("aircraft_photo_small"),
