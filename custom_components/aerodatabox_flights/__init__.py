@@ -130,6 +130,65 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             ),
         }
 
+    async def reconcile_provider_status(number: str, day: str, metadata: dict) -> None:
+        """Fallback lifecycle when FR24 did not confirm this flight.
+
+        Provider statuses are only actionable near the published schedule;
+        repeat lookups and subsequent FR24 events cannot duplicate delivery.
+        """
+        record = store.get(number, day)
+        if not record or record.get("finalized_at") or record.get("tracking_registered_at"):
+            return
+        status = str(metadata.get("status") or "").strip().lower()
+        if status not in ("departed", "arrived", "landed", "canceled", "cancelled"):
+            return
+
+        def parse_utc(value):
+            if not value:
+                return None
+            try:
+                parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00").replace(" ", "T"))
+                return parsed.astimezone(timezone.utc) if parsed.tzinfo else None
+            except (ValueError, TypeError):
+                return None
+
+        now = dt_util.utcnow()
+        departure = parse_utc(record.get("published_departure_utc"))
+        arrival = parse_utc(record.get("published_arrival_utc"))
+        if not departure or not arrival or arrival <= departure:
+            return
+        # Reject stale or implausibly early provider responses.
+        if not (departure - timedelta(hours=2) <= now <= arrival + timedelta(hours=12)):
+            return
+        event = None
+        if status in ("canceled", "cancelled"):
+            if record.get("departed_at"):
+                return
+            await store.finalize(number, day, status="canceled")
+        elif status == "departed":
+            if now > departure + timedelta(hours=6) or record.get("departed_at"):
+                return
+            await store.mark_departed(number, day)
+            event = "takeoff"
+        elif status in ("arrived", "landed"):
+            if now < arrival - timedelta(hours=3):
+                return
+            await store.finalize(number, day, status="landed")
+            event = "landing"
+
+        if event and NATIVE_ALERTS_ENABLED:
+            selected = record.get("alert_recipients") or DEFAULT_RECIPIENTS
+            steps = notification_plan(
+                record, event, dt_util.now(),
+                selected["phones"], selected["alexas"], selected["tv_services"],
+                tv_is_on=hass.states.is_state("media_player.family_room_tv", "on"),
+            )
+            result = await deliver_event(
+                hass, store, record, event, steps, enabled=NATIVE_ALERTS_ENABLED,
+            )
+            for recipient in result["errors"]:
+                _LOGGER.warning("Fallback flight notification failed for %s: %s", record["id"], recipient)
+
     async def lookup_flight_data(number: str, flight_date: str) -> dict:
         # No further AeroDataBox requests after successful FR24 handoff.
         existing = store.get(number, flight_date)
@@ -190,8 +249,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await store.upsert(flight, flight_date, metadata=matches[0])
             current_record = store.get(flight, flight_date)
             api_status = str(matches[0].get("status") or "").lower()
-            if api_status in ("canceled", "cancelled") and current_record and not current_record.get("finalized_at") and not current_record.get("departed_at"):
-                await store.finalize(flight, flight_date, status="canceled")
+            await reconcile_provider_status(flight, flight_date, matches[0])
         return {"flight_number": flight, "date": flight_date, "flights": matches, "count": len(matches)}
 
     async def lookup(call: ServiceCall) -> dict:
@@ -203,8 +261,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def scheduled_refresh(now) -> None:
         """Refresh known upcoming flights, skipping recently refreshed records.
 
-        Successful lookup timestamps prevent repeat requests within 11 hours.
-        This timer is owned by the integration, not a per-flight blueprint.
+        Active untracked flights are refreshed every 30 minutes; future
+        flights retain the 11-hour cache to conserve provider quota.
         """
         for record in store.all():
             if record.get("finalized_at") or record.get("tracking_registered_at"):
@@ -216,9 +274,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                       ) if record.get("metadata_updated_at") else None
             except (ValueError, TypeError):
                 continue
-            if not (date.today() <= departure <= date.today() + timedelta(days=2)):
+            now_utc = dt_util.utcnow()
+            scheduled = (record.get("scheduled_departure_utc")
+                         or (record.get("metadata") or {}).get("scheduled_departure_utc"))
+            try:
+                departure_utc = datetime.fromisoformat(str(scheduled).replace("Z", "+00:00").replace(" ", "T"))
+                if departure_utc.tzinfo is None:
+                    continue
+                departure_utc = departure_utc.astimezone(timezone.utc)
+            except (ValueError, TypeError):
                 continue
-            if age is not None and age < timedelta(hours=11):
+            # Use UTC timestamps, not the HA host's local calendar day.
+            active = departure_utc - timedelta(hours=2) <= now_utc <= departure_utc + timedelta(hours=36)
+            upcoming = now_utc < departure_utc <= now_utc + timedelta(days=2)
+            if not (active or upcoming):
+                continue
+            if age is not None and age < (timedelta(minutes=30) if active else timedelta(hours=11)):
                 continue
             try:
                 await hass.services.async_call(
@@ -339,7 +410,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass, register_upcoming, timedelta(minutes=5),
     ))
     entry.async_on_unload(async_track_time_interval(
-        hass, scheduled_refresh, timedelta(hours=12),
+        hass, scheduled_refresh, timedelta(minutes=15),
     ))
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = store
     hass.services.async_register(
