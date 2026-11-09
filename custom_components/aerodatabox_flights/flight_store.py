@@ -154,6 +154,34 @@ class FlightStore:
         self._notify()
         return record.copy()
 
+    async def set_operational_event(
+        self, number: str, departure_date: str, event_name: str,
+        timestamp: str, source: str = "flightradar24",
+    ) -> dict:
+        """Persist an explicitly identified OOOI event, including after landing.
+
+        Never infer gate times from takeoff, landing, or notification flags.
+        """
+        allowed = {"gate_departure_utc", "takeoff_utc", "landing_utc", "gate_arrival_utc"}
+        if event_name not in allowed:
+            raise ValueError("Unsupported operational event")
+        parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            raise ValueError("Operational timestamp must include a timezone")
+        key = flight_id(number, departure_date)
+        record = self._flights.get(key)
+        if record is None:
+            raise KeyError(key)
+        timeline = record.setdefault("operational_times", {})
+        if event_name not in timeline:
+            timeline[event_name] = {
+                "utc": parsed.astimezone(timezone.utc).isoformat(),
+                "source": source,
+            }
+            await self.async_save()
+            self._notify()
+        return record.copy()
+
     async def set_statistics_included(self, number: str, day: str, included: bool) -> dict:
         """Exclude a flight from metrics without altering tracking or history."""
         key = flight_id(number, day)
