@@ -13,7 +13,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     store = hass.data[DOMAIN][entry.entry_id]
     known: dict[str, FlightSensor] = {}
     registry = er.async_get(hass)
-    prefix = f"{entry.entry_id}_flight_"\n    summary_unique_id = f"{entry.entry_id}_flight_total"
+    prefix = f"{entry.entry_id}_flight_"
+    summary_unique_id = f"{entry.entry_id}_flight_total"
 
     def clean_orphaned_registry_entries() -> None:
         """Only prune our flight sensors that no longer have saved records."""
@@ -22,7 +23,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             if (
                 entity.domain == "sensor"
                 and entity.platform == DOMAIN
-                and entity.unique_id.startswith(prefix)\n                and entity.unique_id != summary_unique_id
+                and entity.unique_id.startswith(prefix)
+                and entity.unique_id != summary_unique_id
                 and entity.unique_id not in active
             ):
                 registry.async_remove(entity.entity_id)
@@ -91,7 +93,8 @@ class FlightSensor(SensorEntity):
 
 class FlightSummarySensor(SensorEntity):
     _attr_has_entity_name = True
-    _attr_name = "Flights Tracked"\n    _attr_suggested_object_id = "flights_tracked"
+    _attr_name = "Flights Tracked"
+    _attr_suggested_object_id = "flights_tracked"
 
     def __init__(self, store, entry_id: str):
         self._store = store
