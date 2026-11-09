@@ -385,6 +385,69 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     for event_type in ("flightradar24_tracked_took_off", "flightradar24_tracked_landed"):
         entry.async_on_unload(hass.bus.async_listen(event_type, handle_fr24_event))
 
+    async def handle_fr24_gate_event(event) -> None:
+        """Record FR24 gate-transition detection times without changing lifecycle.
+
+        The upstream events are inferred transitions, not certified OOOI times.
+        Gate arrival may occur after SkyLedger has finalized the flight.
+        """
+        event_field = {
+            "flightradar24_tracked_left_gate": "gate_departure_utc",
+            "flightradar24_tracked_arrived_gate": "gate_arrival_utc",
+        }.get(event.event_type)
+        if event_field is None:
+            return
+        payload = event.data
+        number = canonical_flight(payload.get("flight_number") or payload.get("callsign") or "")
+        origin = payload.get("airport_origin_code_iata")
+        destination = payload.get("airport_destination_code_iata")
+        scheduled = payload.get("time_scheduled_departure")
+        # A scheduled timestamp and both airports are mandatory: never associate
+        # an event with a recurring flight on flight number alone.
+        if not number or not origin or not destination or not scheduled:
+            return
+        try:
+            scheduled_utc = datetime.fromtimestamp(float(scheduled), timezone.utc)
+        except (ValueError, TypeError, OverflowError):
+            return
+        matches = []
+        for record in store.all():
+            metadata = record.get("metadata") or {}
+            if (canonical_flight(record["flight_number"]) != number
+                    or metadata.get("departure_airport") != origin
+                    or metadata.get("arrival_airport") != destination):
+                continue
+            published = record.get("published_departure_utc") or metadata.get("scheduled_departure_utc")
+            try:
+                departure_utc = datetime.fromisoformat(str(published).replace("Z", "+00:00").replace(" ", "T"))
+                if departure_utc.tzinfo and abs((departure_utc - scheduled_utc).total_seconds()) <= 12 * 3600:
+                    matches.append(record)
+            except (ValueError, TypeError):
+                continue
+        if len(matches) != 1:
+            return
+        record = matches[0]
+        # Do not let a recurring flight's later event rewrite an older record.
+        fired = event.time_fired.astimezone(timezone.utc)
+        if not (scheduled_utc - timedelta(hours=8) <= fired <= scheduled_utc + timedelta(days=3)):
+            return
+        if event_field == "gate_departure_utc" and record.get("finalized_at"):
+            return
+        try:
+            await store.set_operational_event(
+                record["flight_number"], record["departure_date"],
+                event_field, fired.isoformat(),
+                source="flightradar24:event_detected:" + event.event_type,
+            )
+        except (KeyError, ValueError):
+            _LOGGER.exception("Failed to store gate event for %s", record["id"])
+
+    for gate_event_type in (
+        "flightradar24_tracked_left_gate",
+        "flightradar24_tracked_arrived_gate",
+    ):
+        entry.async_on_unload(hass.bus.async_listen(gate_event_type, handle_fr24_gate_event))
+
     async def capture_aircraft_from_fr24(flights: list[dict]) -> None:
         """Backfill current and historical records only from verified live data."""
         for flight in flights:
