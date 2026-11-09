@@ -446,6 +446,73 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 continue
             await store.set_aircraft(record["flight_number"], record["departure_date"], aircraft)
 
+    async def capture_gate_events_from_fr24(flights: list[dict]) -> None:
+        """Store only explicitly labeled gate timestamps from matched FR24 flights.
+
+        FR24's gate_arrived_sent flag is not a timestamp. Generic
+        time_real_departure/arrival fields are not treated as gate events.
+        """
+        field_names = {
+            "gate_departure_utc": ("time_gate_departure", "time_gate_out", "gate_departure_time"),
+            "gate_arrival_utc": ("time_gate_arrival", "time_gate_in", "gate_arrival_time"),
+        }
+        for flight in flights:
+            if not isinstance(flight, dict) or flight.get("tracked_type") != "live":
+                continue
+            if not any(flight.get(key) for keys in field_names.values() for key in keys):
+                continue
+            number = canonical_flight(flight.get("flight_number") or flight.get("callsign") or "")
+            origin = flight.get("airport_origin_code_iata")
+            destination = flight.get("airport_destination_code_iata")
+            scheduled = flight.get("time_scheduled_departure")
+            if not scheduled or not origin or not destination:
+                continue
+            try:
+                scheduled_utc = datetime.fromtimestamp(float(scheduled), timezone.utc)
+            except (ValueError, TypeError, OverflowError):
+                continue
+            matches = []
+            for record in store.all():
+                metadata = record.get("metadata") or {}
+                if (canonical_flight(record["flight_number"]) != number
+                        or metadata.get("departure_airport") != origin
+                        or metadata.get("arrival_airport") != destination):
+                    continue
+                published = record.get("published_departure_utc")
+                if not published:
+                    continue
+                try:
+                    reference = datetime.fromisoformat(str(published).replace("Z", "+00:00").replace(" ", "T"))
+                    if reference.tzinfo and abs((reference - scheduled_utc).total_seconds()) <= 12 * 3600:
+                        matches.append(record)
+                except (TypeError, ValueError):
+                    continue
+            if len(matches) != 1:
+                continue
+            record = matches[0]
+            for event_name, keys in field_names.items():
+                for key in keys:
+                    value = flight.get(key)
+                    if value is None or isinstance(value, bool):
+                        continue
+                    try:
+                        if isinstance(value, (int, float)):
+                            stamp = datetime.fromtimestamp(value, timezone.utc)
+                        else:
+                            stamp = datetime.fromisoformat(str(value).replace("Z", "+00:00").replace(" ", "T"))
+                        if stamp.tzinfo is None:
+                            continue
+                        stamp = stamp.astimezone(timezone.utc)
+                        if not (scheduled_utc - timedelta(days=1) <= stamp <= scheduled_utc + timedelta(days=3)):
+                            continue
+                        await store.set_operational_event(
+                            record["flight_number"], record["departure_date"],
+                            event_name, stamp.isoformat(), source="flightradar24:" + key,
+                        )
+                        break
+                    except (ValueError, TypeError, OverflowError):
+                        continue
+
     async def register_upcoming(now) -> None:
         """Confirm from FR24 sensor first; only retry after persisted backoff."""
         if not hass.states.get("text.flightradar24_add_to_track"):
@@ -457,6 +524,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not isinstance(current, list):
             return
         await capture_aircraft_from_fr24(current)
+        await capture_gate_events_from_fr24(current)
         tracked = {
             str(f.get("flight_number") or f.get("callsign") or "")
             for f in current if isinstance(f, dict)
