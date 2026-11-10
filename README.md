@@ -3,9 +3,7 @@
 Home Assistant flight tracking, travel history, notifications and airline reliability.
 
 **Development/migration stage.** The user-visible integration name is SkyLedger.
-The internal domain remains `aerodatabox_flights` for compatibility with existing
-config entries, storage, sensors and services. Do **not** rename or delete the
-existing integration to migrate; a safe domain/storage migration is still required.
+The new internal domain is `skyledger`. **Do not install this migration branch on an existing installation yet.** Configuration-entry, persistent-history, service, and dashboard migrations are required before deployment.
 
 ## Native configuration
 
@@ -24,12 +22,12 @@ implemented provider-switching capability.
 The current user's Flights dashboard is a storage-mode Lovelace dashboard and is
 **not automatically deployed** by the integration or by installing its Python
 files. Existing dashboards remain as-is on upgrade. The optional Flight Manager
-frontend is in `www/aerodatabox-flight-delete-card.js`. Copy it to
+frontend is in `www/skyledger-flight-manager-card.js`. Copy it to
 `/config/www/`, register it as a JavaScript module resource at
-`/local/aerodatabox-flight-delete-card.js`, and add:
+`/local/skyledger-flight-manager-card.js`, and add:
 
 ```yaml
-type: custom:aerodatabox-flight-delete-card
+type: custom:skyledger-flight-manager-card
 title: Flight Manager
 ```
 
@@ -40,6 +38,5 @@ replace an existing user's Lovelace dashboard.
 
 ## Flight management
 
-The existing services under `aerodatabox_flights` remain valid during
-migration, including `save_flight`, `delete_flight`, and
+New installations use `skyledger` services. Existing `aerodatabox_flights` services remain on the old installation until migration, including `save_flight`, `delete_flight`, and
 `set_flight_statistics_included`.

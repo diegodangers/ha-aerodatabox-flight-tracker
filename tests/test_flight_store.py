@@ -29,7 +29,7 @@ sys.modules.update({
     "homeassistant.helpers.storage": storage,
 })
 package = types.ModuleType("flight_test_package")
-package.__path__ = [str(Path(__file__).resolve().parents[1] / "custom_components" / "aerodatabox_flights")]
+package.__path__ = [str(Path(__file__).resolve().parents[1] / "custom_components" / "skyledger")]
 sys.modules["flight_test_package"] = package
 for name in ("const", "flight_store"):
     path = Path(package.__path__[0]) / (name + ".py")

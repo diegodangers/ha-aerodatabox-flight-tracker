@@ -3,7 +3,7 @@ import importlib.util
 from pathlib import Path
 import unittest
 
-source = Path(__file__).resolve().parents[1] / "custom_components/aerodatabox_flights/notification_config.py"
+source = Path(__file__).resolve().parents[1] / "custom_components/skyledger/notification_config.py"
 spec = importlib.util.spec_from_file_location("flight_notification_config_test", source)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)

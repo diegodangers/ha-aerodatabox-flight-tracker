@@ -6,7 +6,7 @@ catch accidental removal of the fallback when FR24 cannot register a flight.
 from pathlib import Path
 
 SOURCE = (Path(__file__).resolve().parents[1] /
-          "custom_components/aerodatabox_flights/__init__.py").read_text()
+          "custom_components/skyledger/__init__.py").read_text()
 
 
 def test_provider_arrival_reconciles_completion():

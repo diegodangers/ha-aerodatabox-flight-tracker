@@ -1,7 +1,7 @@
 """UI setup and native configuration flow for SkyLedger.
 
 The key is saved without an unrelated health-check request. After setup,
-use the aerodatabox_flights.lookup_flight action to validate the subscription.
+use the skyledger.lookup_flight action to validate the subscription.
 """
 from __future__ import annotations
 

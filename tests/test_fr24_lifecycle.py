@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import unittest
 
-path = Path(__file__).resolve().parents[1] / "custom_components/aerodatabox_flights/fr24_lifecycle.py"
+path = Path(__file__).resolve().parents[1] / "custom_components/skyledger/fr24_lifecycle.py"
 spec = importlib.util.spec_from_file_location("fr24_lifecycle_test", path)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)

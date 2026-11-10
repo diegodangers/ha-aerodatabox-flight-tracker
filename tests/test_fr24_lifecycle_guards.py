@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 spec = importlib.util.spec_from_file_location(
     "fr24_lifecycle", Path(__file__).resolve().parents[1] /
-    "custom_components" / "aerodatabox_flights" / "fr24_lifecycle.py"
+    "custom_components" / "skyledger" / "fr24_lifecycle.py"
 )
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)

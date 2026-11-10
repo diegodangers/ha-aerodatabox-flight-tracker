@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 import unittest
 
-path = Path(__file__).resolve().parents[1] / "custom_components" / "aerodatabox_flights" / "notifications.py"
+path = Path(__file__).resolve().parents[1] / "custom_components" / "skyledger" / "notifications.py"
 spec = importlib.util.spec_from_file_location("flight_notifications_test", path)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
