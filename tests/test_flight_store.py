@@ -70,6 +70,34 @@ class FlightHistoryTests(unittest.TestCase):
             self.assertEqual(store.statistics()["completed_flights"], 1)
         asyncio.run(run())
 
+    def test_legacy_import_preserves_records_and_source(self):
+        async def run():
+            original = {"id": "DL88_2026-11-08", "flight_number": "DL88",
+                        "departure_date": "2026-11-08", "status": "landed",
+                        "distance_miles": 7248.0, "distance_type": "great_circle",
+                        "travelers": ["person.diego"],
+                        "alert_recipients": {"phones": ["notify.mobile_app_phone"]}}
+            FakeStore.state["aerodatabox_flights.history"] = {"flights": {original["id"]: original}}
+            store = FlightStore(None)
+            await store.async_load()
+            self.assertEqual(await store.async_import_legacy_history(), 1)
+            self.assertEqual(store.get("DL88", "2026-11-08"), original)
+            self.assertEqual(store.statistics()["unique_completed_miles"], 7248.0)
+            store._flights[original["id"]]["distance_miles"] = 1
+            self.assertEqual(FakeStore.state["aerodatabox_flights.history"]["flights"][original["id"]]["distance_miles"], 7248.0)
+            with self.assertRaises(ValueError):
+                await store.async_import_legacy_history()
+        asyncio.run(run())
+
+    def test_legacy_import_rejects_missing_history(self):
+        async def run():
+            store = FlightStore(None)
+            await store.async_load()
+            with self.assertRaises(ValueError):
+                await store.async_import_legacy_history()
+            self.assertEqual(store.all(), [])
+        asyncio.run(run())
+
     def test_id(self):
         self.assertEqual(flight_id("dl 2084", "2026-10-31"), "DL2084_2026-10-31")
 

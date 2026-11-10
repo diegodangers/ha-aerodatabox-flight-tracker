@@ -45,6 +45,7 @@ class FlightStore:
     """Save metadata and traveler assignments independently of automations."""
 
     def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
         self._store = Store(hass, STORAGE_VERSION, f"{DOMAIN}.history")
         self._flights: dict[str, dict[str, Any]] = {}
         self._listeners: list[Callable[[], None]] = []
@@ -52,6 +53,33 @@ class FlightStore:
     async def async_load(self) -> None:
         data = await self._store.async_load() or {}
         self._flights = data.get("flights", {})
+
+    async def async_import_legacy_history(self) -> int:
+        """One-time, non-destructive copy of the legacy history store.
+
+        Never overwrite existing SkyLedger records or modify the legacy store.
+        Invoke only during an explicitly approved integration migration, after
+        the old integration has stopped writing to its store.
+        """
+        if self._flights:
+            raise ValueError("SkyLedger history already contains flights; refusing import")
+        legacy = Store(self._hass, STORAGE_VERSION, "aerodatabox_flights.history")
+        data = await legacy.async_load()
+        if not isinstance(data, dict) or not isinstance(data.get("flights"), dict):
+            raise ValueError("Legacy flight history not found or invalid")
+        from copy import deepcopy
+        flights = deepcopy(data["flights"])
+        for key, record in flights.items():
+            if not isinstance(key, str) or not isinstance(record, dict) or record.get("id") != key:
+                raise ValueError("Legacy history contains invalid flight records")
+        self._flights = flights
+        try:
+            await self.async_save()
+        except Exception:
+            self._flights = {}
+            raise
+        self._notify()
+        return len(flights)
 
     async def async_save(self) -> None:
         await self._store.async_save({"flights": self._flights})
