@@ -1,7 +1,7 @@
 name: Validate integration
 on:
   push:
-    branches: [main, feature/flight-history]
+    branches: [main, dev, 'feature/**']
   pull_request:
 jobs:
   checks:
@@ -12,7 +12,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Compile Python
-        run: python -m compileall -q custom_components
+        run: python -m compileall -q custom_components scripts tests
       - name: Validate JSON
         run: |
           python - <<'PY'
