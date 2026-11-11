@@ -1,193 +1,136 @@
-/* SkyLedger saved-flight delete card.
- * Install as a Lovelace JavaScript module resource:
- * /local/skyledger-flight-manager-card.js
- */
+/* SkyLedger compact Flight Manager — HA Lovelace custom card */
 class SkyLedgerFlightManagerCard extends HTMLElement {
-  setConfig(config) {
-    this._config = config || {};
-    this._render();
-  }
-
+  setConfig(config) { this._config=config||{}; this.render(); }
   set hass(hass) {
-    this._hass = hass;
-    this._render();
+    const old=this._hass; this._hass=hass;
+    if (!old || old.states!==hass.states) {
+      if (!this._busy && !this._formOpen) this.render();
+      else this.refreshSummary();
+    }
   }
-
   getCardSize() { return 3; }
-
-  _render() {
-    if (!this._hass) return;
-    if (!this._card) {
-      this._card = document.createElement("ha-card");
-      this._card.header = this._config?.title || "Manage saved flights";
-      this._body = document.createElement("div");
-      this._body.style.cssText = "padding:0 16px 16px;display:grid;gap:10px";
-      this._card.append(this._body);
-      this.replaceChildren(this._card);
+  connectedCallback() { this.render(); }
+  el(tag,cls,text) {
+    const e=document.createElement(tag);
+    if(cls)e.className=cls;
+    if(text!==undefined)e.textContent=text;
+    return e;
+  }
+  flights() {
+    return Object.values(this._hass?.states||{}).filter(s=>s.entity_id.startsWith("sensor.flight_")&&s.attributes?.flight_number&&s.attributes?.departure_date)
+      .sort((a,b)=>b.attributes.departure_date.localeCompare(a.attributes.departure_date));
+  }
+  refreshSummary() {
+    if(!this._summary)return;
+    const flights=this.flights();
+    const active=flights.filter(s=>!s.attributes.finalized_at&&!["landed","canceled","cancelled"].includes(String(s.state).toLowerCase()));
+    this._summary.textContent=`${active.length} upcoming · ${flights.length} saved`;
+  }
+  render() {
+    if(!this.isConnected||!this._hass||this._busy||this._formOpen)return;
+    if(!this._card) {
+      this._card=this.el("ha-card");
+      this._root=this.el("div","root");
+      const style=this.el("style");
+      style.textContent=`
+        .root{padding:16px;color:var(--primary-text-color);font:inherit}
+        .head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+        .title{font-size:1.05rem;font-weight:650}.sub{font-size:.78rem;color:var(--secondary-text-color);margin-top:2px}
+        button{font:inherit;cursor:pointer;border-radius:9px;min-height:34px}
+        .primary{border:0;background:var(--primary-color);color:var(--text-primary-color,#fff);padding:7px 12px;font-weight:600}
+        .secondary{background:transparent;color:var(--primary-text-color);border:1px solid var(--divider-color);padding:6px 10px}
+        .danger{color:var(--error-color);background:transparent;border:1px solid var(--divider-color);padding:5px 9px}
+        .flight{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:11px 0;border-top:1px solid var(--divider-color)}
+        .flight-info{min-width:0;flex:1}.flight-number{font-weight:650;font-size:.93rem}
+        .route{color:var(--secondary-text-color);font-size:.78rem;margin-top:3px}
+        .actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+        .section{font-size:.76rem;font-weight:650;color:var(--secondary-text-color);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.035em}
+        .empty{font-size:.85rem;color:var(--secondary-text-color);padding:12px 0}
+        .form{border-top:1px solid var(--divider-color);padding-top:12px;margin-top:12px}
+        .fields{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:10px 0}
+        label.field{display:flex;flex-direction:column;gap:5px;font-size:.78rem;color:var(--secondary-text-color)}
+        input[type=text],input[type=date]{box-sizing:border-box;width:100%;min-width:0;padding:9px;border:1px solid var(--divider-color);border-radius:8px;background:var(--card-background-color);color:var(--primary-text-color);font:inherit;font-size:.88rem}
+        .people{display:flex;gap:12px;flex-wrap:wrap;margin:9px 0 12px;font-size:.84rem}
+        .people label{display:flex;gap:5px;align-items:center}
+        .note{font-size:.75rem;color:var(--secondary-text-color);margin:8px 0}
+        .footer{display:flex;justify-content:flex-end;gap:8px}
+        .more{border:0;background:transparent;color:var(--secondary-text-color);padding:5px 7px}
+        .menu{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;margin-top:6px}
+        button:disabled{opacity:.5;cursor:wait}
+        @media(max-width:420px){.root{padding:12px}.fields{grid-template-columns:1fr 1fr}.flight{gap:5px}.actions{gap:3px}}
+      `;
+      this._card.append(style,this._root);this.replaceChildren(this._card);
     }
-    const flights = Object.values(this._hass.states)
-      .filter(s => s.entity_id.startsWith("sensor.flight_") &&
-        s.attributes?.flight_number && s.attributes?.departure_date)
-      .sort((a,b) => a.attributes.departure_date.localeCompare(b.attributes.departure_date));
-    this._body.replaceChildren();
-    // Store the form state across Home Assistant sensor refreshes.
-    this._draft ||= { flight: "", date: "", travelers: [], phones: null, alexas: null, tv_services: null };
-    const form = document.createElement("form");
-    form.style.cssText = "display:grid;gap:10px;padding:12px;border:1px solid var(--divider-color);border-radius:10px";
-    const title = document.createElement("strong");
-    title.textContent = "Add Flight";
-    const number = document.createElement("input");
-    number.placeholder = "Flight number (e.g. DL389)";
-    number.required = true;
-    number.value = this._draft.flight;
-    number.style.cssText = "padding:10px;border-radius:8px;border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color)";
-    number.addEventListener("input", () => { this._draft.flight = number.value; });
-    const date = document.createElement("input");
-    date.type = "date";
-    date.required = true;
-    date.value = this._draft.date;
-    date.style.cssText = number.style.cssText;
-    date.addEventListener("input", () => { this._draft.date = date.value; });
-    const travelers = document.createElement("fieldset");
-    const legend = document.createElement("legend");
-    legend.textContent = "Travelers";
-    travelers.append(legend);
-    const people = Object.values(this._hass.states)
-      .filter(state => state.entity_id.startsWith("person."))
-      .sort((a,b) => a.attributes.friendly_name.localeCompare(b.attributes.friendly_name));
-    for (const person of people) {
-      const label = document.createElement("label");
-      label.style.cssText = "display:inline-flex;align-items:center;gap:6px;margin:4px 12px 4px 0";
-      const check = document.createElement("input");
-      check.type = "checkbox";
-      check.checked = this._draft.travelers.includes(person.entity_id);
-      check.addEventListener("change", () => {
-        const selected = new Set(this._draft.travelers);
-        if (check.checked) selected.add(person.entity_id);
-        else selected.delete(person.entity_id);
-        this._draft.travelers = [...selected];
-      });
-      label.append(check, document.createTextNode(person.attributes.friendly_name || person.entity_id));
-      travelers.append(label);
+    const root=this._root;root.replaceChildren();
+    const head=this.el("div","head"),left=this.el("div"),title=this.el("div","title",this._config.title||"Flight Manager");
+    this._summary=this.el("div","sub");left.append(title,this._summary);
+    const add=this.el("button","primary","+ Add flight");add.type="button";add.onclick=()=>this.openForm();
+    head.append(left,add);root.append(head);this.refreshSummary();
+    const flights=this.flights(),active=flights.filter(s=>!s.attributes.finalized_at&&!["landed","canceled","cancelled"].includes(String(s.state).toLowerCase()));
+    const completed=flights.filter(s=>!active.includes(s));
+    const section=(name,items,empty)=>{
+      root.append(this.el("div","section",name));
+      if(!items.length){root.append(this.el("div","empty",empty));return;}
+      for(const state of items)this.renderFlight(root,state);
+    };
+    section("Upcoming & active",active,"No upcoming flights");
+    section("History",completed,"No completed flights");
+  }
+  openForm(){
+    if(this._formOpen)return;
+    this._formOpen=true;
+    const form=this.el("form","form");
+    const heading=this.el("div","section","Add flight");form.append(heading);
+    const fields=this.el("div","fields");
+    const field=(label,type,placeholder)=>{
+      const l=this.el("label","field",label),i=this.el("input");
+      i.type=type;i.placeholder=placeholder||"";i.required=true;l.append(i);fields.append(l);return i;
+    };
+    const number=field("Flight number","text","DL2084"),date=field("Departure date","date");
+    form.append(fields);
+    form.append(this.el("div","section","Travelers"));
+    const people=this.el("div","people");
+    for(const person of Object.values(this._hass.states).filter(s=>s.entity_id.startsWith("person.")).sort((a,b)=>(a.attributes.friendly_name||"").localeCompare(b.attributes.friendly_name||""))){
+      const label=this.el("label"),input=this.el("input");input.type="checkbox";input.value=person.entity_id;
+      label.append(input,document.createTextNode(person.attributes.friendly_name||person.entity_id));people.append(label);
     }
-    const notice = document.createElement("div");
-    notice.style.cssText = "color:var(--secondary-text-color);font-size:0.85em";
-    notice.textContent = "Notification defaults: Settings → Devices & Services → SkyLedger → Configure";
-    const save = document.createElement("button");
-    save.type = "submit";
-    save.textContent = "Add Flight";
-    save.style.cssText = "padding:10px;border:1px solid var(--divider-color);border-radius:8px;cursor:pointer";
-    form.append(title, number, date, travelers, notice, save);
-    form.addEventListener("submit", async event => {
-      event.preventDefault();
-      const flight_number = this._draft.flight.toUpperCase().replace(/\s+/g, "");
-      const departure_date = this._draft.date;
-      if (!/^[A-Z0-9]{2,3}[0-9]{1,5}[A-Z]?$/.test(flight_number) || !/^\d{4}-\d{2}-\d{2}$/.test(departure_date)) {
-        window.alert("Enter a valid flight number and departure date.");
-        return;
-      }
-      if (!this._draft.travelers.length) {
-        window.alert("Select at least one traveler.");
-        return;
-      }
-      save.disabled = true;
-      save.textContent = "Saving…";
-      try {
-        await this._hass.callService("skyledger", "save_flight", {
-          flight_number, date: departure_date, travelers: this._draft.travelers
-        }, {}, true, true);
-        this._draft = {flight:"",date:"",travelers:[],phones:null,alexas:null,tv_services:null};
-        this._render();
-      } catch (err) {
-        window.alert("Unable to save flight: " + (err?.message || String(err)));
-        save.disabled = false;
-        save.textContent = "Add Flight";
-      }
-    });
-    this._body.append(form);
-    if (!flights.length) {
-      const empty = document.createElement("div");
-      empty.textContent = "No saved flights.";
-      this._body.append(empty);
-      return;
-    }
-    const active = flights.filter(s => !s.attributes.finalized_at && !["landed", "canceled", "cancelled"].includes(String(s.state).toLowerCase()));
-    const activeHeading = document.createElement("strong");
-    activeHeading.textContent = "Upcoming / Active (" + active.length + ")";
-    this._body.append(activeHeading);
-    if (!active.length) {
-      const empty = document.createElement("div");
-      empty.textContent = "No active flights.";
-      this._body.append(empty);
-    }
-    for (const state of active) {
-      const f = state.attributes;
-      const row = document.createElement("div");
-      row.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:12px";
-      const details = document.createElement("div");
-      const heading = document.createElement("strong");
-      heading.textContent = f.flight_number + " · " + f.departure_date;
-      const route = document.createElement("div");
-      route.style.cssText = "color:var(--secondary-text-color);font-size:0.85em";
-      const m = f.metadata || {};
-      route.textContent = (m.departure_airport || "?") + " → " + (m.arrival_airport || "?");
-      details.append(heading, route);
-      const button = document.createElement("button");
-      button.textContent = "Delete";
-      button.type = "button";
-      button.setAttribute("aria-label", "Delete " + f.flight_number + " on " + f.departure_date);
-      button.style.cssText = "background:transparent;color:var(--error-color);border:1px solid var(--divider-color);padding:8px 12px;border-radius:8px;cursor:pointer";
-      button.addEventListener("click", async () => {
-        const label = f.flight_number + " on " + f.departure_date +
-          " (" + (m.departure_airport || "?") + " → " + (m.arrival_airport || "?") + ")";
-        if (!window.confirm("Permanently delete " + label +
-          "? This removes its flight history, mileage and airline statistics. This cannot be undone.")) return;
-        button.disabled = true;
-        button.textContent = "Deleting…";
-        try {
-          await this._hass.callService("skyledger", "delete_flight", {
-            flight_number: f.flight_number,
-            date: f.departure_date
-          }, {}, true, true);
-          // The integration publishes changed states; leave UI refresh to HA.
-        } catch (err) {
-          window.alert("Flight deletion failed: " + (err?.message || String(err)));
-          button.disabled = false;
-          button.textContent = "Delete";
-        }
-      });
-      const controls = document.createElement("div");
-      controls.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap";
-      const excluded = f.include_in_statistics === false;
-      const statsButton = document.createElement("button");
-      statsButton.type = "button";
-      statsButton.textContent = excluded ? "Include in stats" : "Exclude from stats";
-      statsButton.title = "Toggle this flight's contribution to counts and airline punctuality without deleting it";
-      statsButton.style.cssText = "background:transparent;color:var(--primary-text-color);border:1px solid var(--divider-color);padding:8px;border-radius:8px;cursor:pointer";
-      statsButton.addEventListener("click", async () => {
-        statsButton.disabled = true;
-        try {
-          await this._hass.callService("skyledger", "set_flight_statistics_included", {
-            flight_number: f.flight_number, date: f.departure_date, included: excluded
-          }, {}, true, true);
-        } catch (err) {
-          window.alert("Unable to change statistics: " + (err?.message || String(err)));
-        } finally {
-          statsButton.disabled = false;
-        }
-      });
-      controls.append(statsButton, button);
-      row.append(details, controls);
-      this._body.append(row);
-    }
+    form.append(people,this.el("div","note","Alert defaults are configured in SkyLedger settings."));
+    const footer=this.el("div","footer"),cancel=this.el("button","secondary","Cancel"),save=this.el("button","primary","Save flight");
+    cancel.type="button";save.type="submit";cancel.onclick=()=>{this._formOpen=false;this.render();};
+    footer.append(cancel,save);form.append(footer);
+    form.onsubmit=async e=>{
+      e.preventDefault();
+      const flight_number=number.value.toUpperCase().replace(/\s+/g,""),day=date.value;
+      const travelers=[...people.querySelectorAll("input:checked")].map(x=>x.value);
+      if(!/^[A-Z0-9]{2,3}[0-9]{1,5}[A-Z]?$/.test(flight_number)||!/^\d{4}-\d{2}-\d{2}$/.test(day)){window.alert("Enter a valid flight number and date.");return;}
+      if(!travelers.length){window.alert("Select at least one traveler.");return;}
+      this._busy=true;save.disabled=true;save.textContent="Saving…";
+      try{await this._hass.callService("skyledger","save_flight",{flight_number,date:day,travelers},{},true,true);this._formOpen=false;this._busy=false;this.render();}
+      catch(err){this._busy=false;save.disabled=false;save.textContent="Save flight";window.alert("Unable to save flight: "+(err?.message||String(err)));}
+    };
+    this._root.insertBefore(form,this._root.children[1]||null);number.focus();
+  }
+  renderFlight(root,state){
+    const f=state.attributes,m=f.metadata||{},row=this.el("div","flight"),info=this.el("div","flight-info");
+    const date=f.departure_date,route=`${m.departure_airport||"?"} → ${m.arrival_airport||"?"}`;
+    info.append(this.el("div","flight-number",`${f.flight_number} · ${date}`),this.el("div","route",route));
+    const actions=this.el("div","actions"),more=this.el("button","more","•••");more.type="button";more.title="Flight actions";more.setAttribute("aria-label","Actions for "+f.flight_number);
+    const menu=this.el("div","menu");menu.hidden=true;
+    const excluded=f.include_in_statistics===false;
+    const stats=this.el("button","secondary",excluded?"Include in stats":"Exclude from stats"),del=this.el("button","danger","Delete");
+    for(const b of [stats,del])b.type="button";
+    more.onclick=()=>{menu.hidden=!menu.hidden;};
+    stats.onclick=async()=>{stats.disabled=true;try{await this._hass.callService("skyledger","set_flight_statistics_included",{flight_number:f.flight_number,date,included:excluded},{},true,true);menu.hidden=true;this.render();}catch(err){window.alert("Unable to update statistics: "+(err?.message||String(err)));}finally{stats.disabled=false;}};
+    del.onclick=async()=>{
+      if(!window.confirm(`Permanently delete ${f.flight_number} on ${date} (${route})? This removes its history and statistics and cannot be undone.`))return;
+      del.disabled=true;del.textContent="Deleting…";
+      try{await this._hass.callService("skyledger","delete_flight",{flight_number:f.flight_number,date},{},true,true);this.render();}
+      catch(err){window.alert("Delete failed: "+(err?.message||String(err)));del.disabled=false;del.textContent="Delete";}
+    };
+    menu.append(stats,del);actions.append(more);row.append(info,actions);
+    const wrap=this.el("div");wrap.append(row,menu);root.append(wrap);
   }
 }
-if (!customElements.get("skyledger-flight-manager-card")) {
-  customElements.define("skyledger-flight-manager-card", SkyLedgerFlightManagerCard);
-}
-window.customCards = window.customCards || [];
-window.customCards.push({
-  type: "skyledger-flight-manager-card",
-  name: "SkyLedger Flight Manager",
-  description: "Confirm before deleting a saved flight from SkyLedger history."
-});
+if(!customElements.get("skyledger-flight-manager-card"))customElements.define("skyledger-flight-manager-card",SkyLedgerFlightManagerCard);
+window.customCards=window.customCards||[];
+if(!window.customCards.some(c=>c.type==="skyledger-flight-manager-card"))window.customCards.push({type:"skyledger-flight-manager-card",name:"SkyLedger Flight Manager",description:"Compact flight management"});
