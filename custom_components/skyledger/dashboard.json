@@ -1,0 +1,158 @@
+{
+  "views": [
+    {
+      "title": "Overview",
+      "path": "flights",
+      "icon": "mdi:airplane",
+      "type": "sections",
+      "max_columns": 2,
+      "sections": [
+        {
+          "type": "grid",
+          "visibility": [
+            {
+              "condition": "state",
+              "entity": "binary_sensor.skyledger_active_flight",
+              "state": "on"
+            }
+          ],
+          "cards": [
+            {
+              "type": "heading",
+              "heading": "Active flight",
+              "icon": "mdi:airplane-takeoff"
+            },
+            {
+              "type": "markdown",
+              "content": "Live tracking is active. Flight details appear in the upcoming flights and FR24 sections."
+            }
+          ]
+        },
+        {
+          "type": "grid",
+          "cards": [
+            {
+              "type": "heading",
+              "heading": "Upcoming flights",
+              "icon": "mdi:calendar-clock"
+            },
+            {
+              "type": "markdown",
+              "content": "{% set flights = states.sensor | selectattr('attributes.flight_number','defined') | list %}{% set ns = namespace(count=0) %}{% for f in flights | sort(attribute='attributes.departure_date') %}{% if not f.attributes.get('finalized_at') and f.state | lower not in ['airborne','landed','canceled','cancelled'] %}{% set ns.count = ns.count + 1 %}{% set m = f.attributes.get('metadata') or {} %}{% set dep = f.attributes.get('scheduled_departure_utc') or m.get('scheduled_departure_utc') %}{% set arr = f.attributes.get('scheduled_arrival_utc') or m.get('scheduled_arrival_utc') %}\n### ✈ {{ f.attributes.flight_number }}  ·  {{ f.state | title }}\n# {{ m.get('departure_airport','—') }}  →  {{ m.get('arrival_airport','—') }}\n**{{ as_local(as_datetime(dep)).strftime('%a %b %d · %I:%M %p') if dep else f.attributes.departure_date }}**\nArrival: {{ as_local(as_datetime(arr)).strftime('%b %d · %I:%M %p') if arr else 'Pending' }}\n{% if f.attributes.get('distance_miles') is number %}**Direct distance:** {{ '{:,.0f}'.format(f.attributes.distance_miles) }} mi{% endif %}\n{% set ac = f.attributes.get('aircraft') or {} %}{% if ac.get('registration') %}Aircraft: **{{ ac.get('registration') }}** · {{ ac.get('model') or 'Model pending' }}{% endif %}\n---\n{% endif %}{% endfor %}{% if ns.count == 0 %}No upcoming flights.{% endif %}"
+            },
+            {
+              "type": "heading",
+              "heading": "SkyLedger",
+              "icon": "mdi:airplane"
+            },
+            {
+              "type": "markdown",
+              "content": "{% set s = state_attr('sensor.flights_tracked','total_flights') %}{% set c = state_attr('sensor.flights_tracked','completed_flights') %}{% set miles = state_attr('sensor.flights_tracked','unique_completed_miles') %}\n## {{ s if s is not none else '—' }} saved  ·  {{ c if c is not none else '—' }} completed\n**{{ '{:,.0f}'.format(miles | float(0)) }} miles flown**\n"
+            }
+          ]
+        },
+        {
+          "type": "grid",
+          "cards": [
+            {
+              "type": "tile",
+              "entity": "sensor.flightradar24_additional_tracked",
+              "name": "FR24 tracked flights"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "History",
+      "path": "history",
+      "icon": "mdi:history",
+      "type": "sections",
+      "max_columns": 2,
+      "sections": [
+        {
+          "type": "grid",
+          "cards": [
+            {
+              "type": "heading",
+              "heading": "Completed flights"
+            },
+            {
+              "type": "markdown",
+              "content": "{% set flights = states.sensor | selectattr('attributes.flight_number','defined') | list %}\n{% set ns = namespace(count=0) %}\n{% for f in flights | sort(attribute='attributes.departure_date',reverse=true) %}\n{% if f.attributes.get('finalized_at') or f.state | lower in ['landed','canceled','cancelled'] %}\n{% set ns.count = ns.count + 1 %}\n{% set m = f.attributes.get('metadata') or {} %}\n{% set ac = f.attributes.get('aircraft') or {} %}\n{% set t = f.attributes.get('operational_times') or {} %}\n{% set scheduled_arr = f.attributes.get('scheduled_arrival_utc') or m.get('scheduled_arrival_utc') %}\n{% set scheduled_dep = f.attributes.get('scheduled_departure_utc') or m.get('scheduled_departure_utc') %}\n{% set actual_dep = f.attributes.get('actual_departure_utc') %}\n{% set stored_arr = f.attributes.get('actual_arrival_utc') %}\n{% set finalized = f.attributes.get('finalized_at') %}\n{% set actual_arr = (t.get('gate_arrival_utc') or {}).get('utc') or (stored_arr if stored_arr and (not finalized or (as_timestamp(stored_arr) - as_timestamp(finalized)) | abs > 2) else none) %}\n{% set arr_diff = ((as_timestamp(actual_arr) - as_timestamp(scheduled_arr)) / 60) | round(0) | int if actual_arr and scheduled_arr else none %}\n{% set dep_diff = ((as_timestamp(actual_dep) - as_timestamp(scheduled_dep)) / 60) | round(0) | int if actual_dep and scheduled_dep else none %}\n{% set duration = ((as_timestamp(actual_arr) - as_timestamp(actual_dep)) / 60) | round(0) | int if actual_arr and actual_dep else none %}\n**{{ f.attributes.flight_number }}** · {{ m.get('departure_airport','—') }} → {{ m.get('arrival_airport','—') }}  \n{{ f.attributes.departure_date }} · {{ f.state | title }}{% if ac.get('registration') %} · {{ ac.get('registration') }}{% endif %}{% if ac.get('jetphotos_url') %} · [Photos]({{ ac.get('jetphotos_url') }}){% endif %}  \n**Distance:** {{ '{:,.0f}'.format(f.attributes.distance_miles) ~ ' mi (direct)' if f.attributes.get('distance_miles') is number else 'Unavailable' }} · **Trip duration:** {{ (duration // 60) ~ 'h ' ~ (duration % 60) ~ 'm' if duration is not none and duration >= 0 else 'Unavailable' }}  \n**Arrival:** {% if arr_diff is none %}Variance unavailable{% elif arr_diff < 0 %}{{ -arr_diff }} min early{% elif arr_diff > 15 %}{{ arr_diff }} min delayed{% elif arr_diff > 0 %}{{ arr_diff }} min late (on time){% else %}On time{% endif %} · **Departure:** {% if dep_diff is none %}Variance unavailable{% elif dep_diff < 0 %}{{ -dep_diff }} min early{% elif dep_diff > 0 %}{{ dep_diff }} min late{% else %}On time{% endif %}\n{% if t.get('gate_departure_utc') %}  \nLeft gate {{ as_local(as_datetime(t['gate_departure_utc']['utc'])).strftime('%I:%M %p') }}{% endif %}{% if t.get('gate_arrival_utc') %} · Arrived gate {{ as_local(as_datetime(t['gate_arrival_utc']['utc'])).strftime('%I:%M %p') }}{% endif %}\n\n---\n{% endif %}\n{% endfor %}\n{% if ns.count == 0 %}No completed flights yet.{% endif %}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Statistics",
+      "path": "statistics",
+      "icon": "mdi:chart-bar",
+      "type": "sections",
+      "max_columns": 2,
+      "sections": [
+        {
+          "type": "grid",
+          "cards": [
+            {
+              "type": "heading",
+              "heading": "Flight totals"
+            },
+            {
+              "type": "markdown",
+              "content": "{% set s = state_attr('sensor.flights_tracked','total_flights') %}{% set c = state_attr('sensor.flights_tracked','completed_flights') %}{% set miles = state_attr('sensor.flights_tracked','unique_completed_miles') %}\n## {{ s if s is not none else '—' }} saved  ·  {{ c if c is not none else '—' }} completed\n**{{ '{:,.0f}'.format(miles | float(0)) }} miles flown**\n"
+            },
+            {
+              "type": "heading",
+              "heading": "Airline performance"
+            },
+            {
+              "type": "markdown",
+              "content": "{% set data = state_attr('sensor.flights_tracked', 'airline_performance') or {} %}\n{% if not data %}\nNo completed flights with airline statistics yet. Statistics will populate once the updated integration is installed and a flight is finalized.\n{% else %}\n{% for code, a in data | dictsort %}\n### {{ code }} · {{ a.completed_flights }} completed flight{{ '' if a.completed_flights == 1 else 's' }}\n| Metric | Result |\n|---|---:|\n| Scheduled outcomes | {{ a.scheduled_outcomes if a.scheduled_outcomes is defined else a.completed_flights }} |\n| Cancellations | {{ a.canceled_flights if a.canceled_flights is defined else 0 }} |\n| Cancellation rate | {{ (a.cancellation_rate_pct | string ~ '%') if a.cancellation_rate_pct is defined and a.cancellation_rate_pct is not none else '—' }} |\n| Overall on-time reliability | {{ (a.overall_on_time_pct | string ~ '%') if a.overall_on_time_pct is defined and a.overall_on_time_pct is not none else '—' }} |\n| Arrival samples | {{ a.arrival_samples }} |\n| On-time arrivals (≤15 min late) | {{ a.on_time_arrivals }}{% if a.on_time_arrival_pct is not none %} ({{ a.on_time_arrival_pct }}%){% endif %} |\n| Early arrivals | {{ a.early_arrivals }} |\n| Delayed arrivals (>15 min) | {{ a.late_arrivals }} |\n| Average arrival variance | {{ (a.average_arrival_variance_min | string ~ ' min') if a.average_arrival_variance_min is not none else '—' }} |\n| Worst arrival delay | {{ (a.worst_arrival_delay_min | string ~ ' min') if a.worst_arrival_delay_min is not none else '—' }} |\n| Departure samples | {{ a.departure_samples }} |\n| Early / late departures | {{ a.early_departures }} / {{ a.late_departures }} |\n{% for traveler, t in (a.travelers or {}) | dictsort %}\n**{{ state_attr(traveler, \"friendly_name\") or traveler }}:** {{ t.completed_flights }} flight(s); {{ t.on_time_arrivals }}/{{ t.arrival_samples }} on-time arrivals\n{% endfor %}\n---\n{% endfor %}\n{% endif %}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Manage",
+      "path": "manage",
+      "icon": "mdi:airplane-edit",
+      "type": "sections",
+      "max_columns": 2,
+      "sections": [
+        {
+          "type": "grid",
+          "cards": [
+            {
+              "type": "heading",
+              "heading": "Manage saved flights"
+            },
+            {
+              "type": "markdown",
+              "content": "Use SkyLedger actions under Developer Tools → Actions to add and manage flights. The optional Flight Manager card is installed separately."
+            },
+            {
+              "type": "heading",
+              "heading": "Tracking controls"
+            },
+            {
+              "type": "entities",
+              "entities": [
+                {
+                  "entity": "sensor.flightradar24_additional_tracked",
+                  "name": "Tracked flights"
+                },
+                {
+                  "entity": "switch.flightradar24_api_data_fetching",
+                  "name": "FR24 data fetching"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

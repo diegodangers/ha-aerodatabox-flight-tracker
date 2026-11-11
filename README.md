@@ -21,9 +21,9 @@ implemented provider-switching capability.
 
 ## Flights dashboard
 
-The current user's Flights dashboard is a storage-mode Lovelace dashboard and is
-**not automatically deployed** by the integration or by installing its Python
-files. Existing dashboards remain as-is on upgrade. The optional Flight Manager
+SkyLedger creates a starter dashboard (Overview, History, Statistics, Manage) on first setup.
+Existing dashboards at `upcoming-flights` or `skyledger-flights` are preserved and never overwritten.
+The starter uses native cards; optional advanced custom cards are installed separately. The optional Flight Manager
 frontend is in `www/skyledger-flight-manager-card.js`. Copy it to
 `/config/www/`, register it as a JavaScript module resource at
 `/local/skyledger-flight-manager-card.js`, and add:

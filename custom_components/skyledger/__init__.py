@@ -18,6 +18,7 @@ from homeassistant.util import dt as dt_util
 import voluptuous as vol
 
 from .const import API_HOST, BASE_URL, CONF_API_KEY, DOMAIN
+from .dashboard_setup import async_ensure_dashboard
 from .flight_store import FlightStore
 from .fr24_lifecycle import matched_record, should_register, is_fr24_tracked, canonical_flight, valid_flight_event, within_registration_window
 from .notifications import NATIVE_ALERTS_ENABLED, notification_plan
@@ -43,6 +44,7 @@ def normalize_time(raw):
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     store = FlightStore(hass)
     await store.async_load()
+    await async_ensure_dashboard(hass)
 
     async def check_fr24_dependency() -> None:
         """Guide setup without installing or changing third-party integrations."""
