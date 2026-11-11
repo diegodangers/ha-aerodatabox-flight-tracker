@@ -128,6 +128,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 (record.get("alert_recipients") or DEFAULT_RECIPIENTS)["alexas"],
                 (record.get("alert_recipients") or DEFAULT_RECIPIENTS)["tv_services"],
                 tv_is_on=hass.states.is_state("media_player.family_room_tv", "on"),
+                quiet_start=entry.options.get("alexa_quiet_start", "22:00"),
+                quiet_end=entry.options.get("alexa_quiet_end", "07:00"),
             ),
         }
 
@@ -183,6 +185,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 record, event, dt_util.now(),
                 selected["phones"], selected["alexas"], selected["tv_services"],
                 tv_is_on=hass.states.is_state("media_player.family_room_tv", "on"),
+                quiet_start=entry.options.get("alexa_quiet_start", "22:00"),
+                quiet_end=entry.options.get("alexa_quiet_end", "07:00"),
             )
             result = await deliver_event(
                 hass, store, record, event, steps, enabled=NATIVE_ALERTS_ENABLED,
@@ -373,6 +377,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     record, alert, dt_util.now(),
                     selected["phones"], selected["alexas"], selected["tv_services"],
                 tv_is_on=hass.states.is_state("media_player.family_room_tv", "on"),
+                quiet_start=entry.options.get("alexa_quiet_start", "22:00"),
+                quiet_end=entry.options.get("alexa_quiet_end", "07:00"),
                 )
                 result = await deliver_event(
                     hass, store, record, alert, steps, enabled=NATIVE_ALERTS_ENABLED,

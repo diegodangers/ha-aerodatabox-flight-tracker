@@ -5,7 +5,7 @@ The host integration must explicitly enable this after a live target audit.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, time
 from typing import Any
 
 # Migration safety: existing flight blueprints still send alerts.
@@ -24,15 +24,23 @@ def alert_message(record: dict[str, Any], event: str) -> tuple[str, str]:
     return (title, f"{flight} {origin} to {destination} has {activity}.")
 
 
-def in_alexa_hours(local: datetime) -> bool:
-    """Allowed: 07:00 inclusive until 22:00 exclusive, using HA local time."""
-    return 7 <= local.hour < 22
-
+def in_alexa_hours(local: datetime, quiet_start: str = "22:00", quiet_end: str = "07:00") -> bool:
+    """Return whether an Alexa announcement is allowed by the configured quiet window."""
+    try:
+        start = time.fromisoformat(quiet_start)
+        end = time.fromisoformat(quiet_end)
+    except (TypeError, ValueError):
+        start, end = time(22, 0), time(7, 0)
+    now = local.timetz().replace(tzinfo=None)
+    if start == end:
+        return True
+    quiet = start <= now < end if start < end else (now >= start or now < end)
+    return not quiet
 
 def notification_plan(
     record: dict[str, Any], event: str, local_now: datetime,
     phones: list[str], alexas: list[str], televisions: list[str],
-    *, tv_is_on: bool = True,
+    *, tv_is_on: bool = True, quiet_start: str = "22:00", quiet_end: str = "07:00",
 ) -> list[dict[str, Any]]:
     title, message = alert_message(record, event)
     steps: list[dict[str, Any]] = []
@@ -41,7 +49,7 @@ def notification_plan(
             "domain": "notify", "service": "send_message",
             "data": {"entity_id": sorted(set(phones)), "title": title, "message": message},
         })
-    if alexas and in_alexa_hours(local_now):
+    if alexas and in_alexa_hours(local_now, quiet_start, quiet_end):
         steps.append({
             "domain": "notify", "service": "alexa_media",
             "data": {"target": sorted(set(alexas)), "message": message, "data": {"type": "announce"}},
