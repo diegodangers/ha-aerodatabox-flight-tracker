@@ -1,0 +1,37 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "AeroDataBox via RapidAPI",
+        "description": "Enter your RapidAPI key. It is stored in Home Assistant's integration configuration and used only for authenticated server-side requests.",
+        "data": {
+          "api_key": "RapidAPI key"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid RapidAPI key or subscription",
+      "rate_limit": "Rate limit reached",
+      "cannot_connect": "Could not contact AeroDataBox"
+    },
+    "abort": {
+      "already_configured": "AeroDataBox is already configured"
+    }
+  },
+  "services": {
+    "lookup_flight": {
+      "name": "Look up scheduled flight",
+      "description": "Find flights by flight number and local departure date.",
+      "fields": {
+        "flight_number": {
+          "name": "Flight number",
+          "description": "For example DL2084"
+        },
+        "date": {
+          "name": "Departure date",
+          "description": "YYYY-MM-DD, departure-airport local date"
+        }
+      }
+    }
+  }
+}
