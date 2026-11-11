@@ -1,7 +1,7 @@
 """Airline punctuality derived from completed saved flight records.
 
 An airline is the IATA prefix of a stored flight number. Variances compare
-FR24 actual timestamps to the first AeroDataBox schedule retained at creation.
+detected off-block/on-block timestamps to the first AeroDataBox schedule retained at creation.
 """
 from __future__ import annotations
 from collections import defaultdict
@@ -57,8 +57,8 @@ def punctuality(records: list[dict]) -> dict:
             meta = f.get("metadata") or {}
             base_dep = _timestamp(f.get("published_departure_utc") or meta.get("scheduled_departure_utc"))
             base_arr = _timestamp(f.get("published_arrival_utc") or meta.get("scheduled_arrival_utc"))
-            actual_dep = _timestamp(f.get("actual_departure_utc") or f.get("departed_at"))
-            actual_arr = _timestamp(f.get("actual_arrival_utc") or f.get("finalized_at"))
+            actual_dep = _timestamp(((f.get("operational_times") or {}).get("gate_departure_utc") or {}).get("utc"))
+            actual_arr = _timestamp(((f.get("operational_times") or {}).get("gate_arrival_utc") or {}).get("utc"))
             if base_dep and actual_dep:
                 v = (actual_dep - base_dep).total_seconds() / 60
                 dep.append(v)
@@ -78,8 +78,8 @@ def punctuality(records: list[dict]) -> dict:
             result["average_arrival_variance_min"] = round(sum(arr) / len(arr), 1)
             result["on_time_arrival_pct"] = round(100 * result["on_time_arrivals"] / len(arr), 1)
             result["worst_arrival_delay_min"] = round(max(0, max(arr)), 1)
-        if flights:
-            result["overall_on_time_pct"] = round(100 * result["on_time_arrivals"] / len(flights), 1)
+        if arr:
+            result["overall_on_time_pct"] = round(100 * result["on_time_arrivals"] / len(arr), 1)
         return result
 
     return {
