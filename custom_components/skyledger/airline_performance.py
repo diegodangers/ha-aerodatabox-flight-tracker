@@ -1,7 +1,7 @@
 """Airline punctuality derived from completed saved flight records.
 
 An airline is the IATA prefix of a stored flight number. Variances compare
-detected off-block/on-block timestamps to the first AeroDataBox schedule retained at creation.
+reported actual departure and detected gate-arrival timestamps to the first AeroDataBox schedule retained at creation.
 """
 from __future__ import annotations
 from collections import defaultdict
@@ -57,7 +57,7 @@ def punctuality(records: list[dict]) -> dict:
             meta = f.get("metadata") or {}
             base_dep = _timestamp(f.get("published_departure_utc") or meta.get("scheduled_departure_utc"))
             base_arr = _timestamp(f.get("published_arrival_utc") or meta.get("scheduled_arrival_utc"))
-            actual_dep = _timestamp(((f.get("operational_times") or {}).get("gate_departure_utc") or {}).get("utc"))
+            actual_dep = _timestamp(f.get("actual_departure_utc"))
             actual_arr = _timestamp(((f.get("operational_times") or {}).get("gate_arrival_utc") or {}).get("utc"))
             if base_dep and actual_dep:
                 v = (actual_dep - base_dep).total_seconds() / 60
