@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import aiohttp_client
+from homeassistant.components import persistent_notification
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 import voluptuous as vol
@@ -42,6 +43,38 @@ def normalize_time(raw):
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     store = FlightStore(hass)
     await store.async_load()
+
+    async def check_fr24_dependency() -> None:
+        """Guide setup without installing or changing third-party integrations."""
+        notification_id = "skyledger_fr24_dependency"
+        entries = hass.config_entries.async_entries("flightradar24")
+        tracked = hass.states.get("sensor.flightradar24_additional_tracked")
+        add = hass.states.get("text.flightradar24_add_to_track")
+        remove = hass.states.get("text.flightradar24_remove_from_track")
+        if all(state is not None and state.state not in ("unavailable", "unknown") for state in (tracked, add, remove)):
+            persistent_notification.async_dismiss(hass, notification_id)
+            return
+        if entries:
+            message = (
+                "Flightradar24 is configured, but its live-tracking entities are missing "
+                "or unavailable. Check **Settings → Devices & services → Flightradar24** "
+                "and enable the tracking entities. Scheduling and history remain usable."
+            )
+        else:
+            message = (
+                "Live tracking requires the community Flightradar24 integration. "
+                "[Install Flightradar24 through HACS]"
+                "(https://github.com/AlexandrErohin/home-assistant-flightradar24), "
+                "then configure it under **Settings → Devices & services**. "
+                "Scheduling and history remain usable without it."
+            )
+        persistent_notification.async_create(
+            hass, message, title="SkyLedger: Flightradar24 setup required",
+            notification_id=notification_id,
+        )
+
+    await check_fr24_dependency()
+
 
     async def save_flight(call: ServiceCall) -> dict:
         """Register a flight from the app without requiring a blueprint.
@@ -584,6 +617,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def register_upcoming(now) -> None:
         """Confirm from FR24 sensor first; only retry after persisted backoff."""
+        await check_fr24_dependency()
         if not hass.states.get("text.flightradar24_add_to_track"):
             return
         state = hass.states.get("sensor.flightradar24_additional_tracked")

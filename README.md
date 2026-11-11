@@ -12,7 +12,11 @@ and Alexa quiet hours. These defaults apply to **new flights only**; existing
 flight-specific recipient settings are preserved. The optional Flight Manager card supports per-flight recipient selection. Automatic recipient discovery for newly added devices is planned but not yet implemented.
 
 The schedule provider is currently AeroDataBox, and live tracking uses
-Flightradar24. Provider independence is an architectural goal, not yet an
+[Flightradar24 by AlexandrErohin](https://github.com/AlexandrErohin/home-assistant-flightradar24).
+SkyLedger checks for FR24 tracking entities on startup and every five minutes. Missing or
+unavailable entities generate a Home Assistant notification with installation or configuration
+guidance; the notification clears once FR24 becomes available. SkyLedger does not silently
+install third-party integrations. Scheduling and saved history work without FR24. Provider independence is an architectural goal, not yet an
 implemented provider-switching capability.
 
 ## Flights dashboard
