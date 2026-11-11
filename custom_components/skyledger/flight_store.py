@@ -282,6 +282,18 @@ class FlightStore:
         await self.async_save()
         self._notify()
 
+    async def mark_external_tracking(self, number: str, departure_date: str) -> None:
+        """Persist external ownership; never grant FR24 removal rights."""
+        record = self._flights.get(flight_id(number, departure_date))
+        if record is None or record.get("tracking_registered_at"):
+            return
+        record["tracking_registered_at"] = datetime.now(timezone.utc).isoformat()
+        record["tracking_status"] = "external"
+        record["tracking_owned"] = False
+        record["tracking_requested_new"] = False
+        await self.async_save()
+        self._notify()
+
     async def mark_registered(self, number: str, departure_date: str) -> None:
         """Only call after the FR24 tracked sensor confirms the flight."""
         record = self._flights.get(flight_id(number, departure_date))
@@ -290,7 +302,7 @@ class FlightStore:
         record["tracking_registered_at"] = datetime.now(timezone.utc).isoformat()
         record["tracking_status"] = "confirmed"
         # Ownership only for requests made when this flight number was absent.
-        record["tracking_owned"] = bool(record.get("tracking_requested_new"))
+        record["tracking_owned"] = bool(record.get("tracking_requested_new")) and record.get("tracking_status") != "external"
         await self.async_save()
         self._notify()
 
