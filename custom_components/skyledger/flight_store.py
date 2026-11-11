@@ -271,10 +271,12 @@ class FlightStore:
         self._notify()
         return True
 
-    async def note_registration_attempt(self, number: str, departure_date: str) -> None:
+    async def note_registration_attempt(self, number: str, departure_date: str, *, new_tracking: bool = False) -> None:
         """Persist the attempted request BEFORE sending it to FR24."""
         record = self._flights[flight_id(number, departure_date)]
         record["tracking_last_attempt_at"] = datetime.now(timezone.utc).isoformat()
+        if new_tracking:
+            record["tracking_requested_new"] = True
         record["tracking_attempts"] = record.get("tracking_attempts", 0) + 1
         record["tracking_status"] = "pending_confirmation"
         await self.async_save()
@@ -287,6 +289,23 @@ class FlightStore:
             return
         record["tracking_registered_at"] = datetime.now(timezone.utc).isoformat()
         record["tracking_status"] = "confirmed"
+        # Ownership only for requests made when this flight number was absent.
+        record["tracking_owned"] = bool(record.get("tracking_requested_new"))
+        await self.async_save()
+        self._notify()
+
+    async def mark_tracking_removed(self, number: str, departure_date: str) -> None:
+        record = self._flights[flight_id(number, departure_date)]
+        record["tracking_status"] = "removed_after_gate_arrival"
+        record["tracking_removed_at"] = datetime.now(timezone.utc).isoformat()
+        await self.async_save()
+        self._notify()
+
+    async def set_actual_departure(self, number: str, departure_date: str, timestamp: str) -> None:
+        record = self._flights[flight_id(number, departure_date)]
+        if record.get("actual_departure_utc") == timestamp:
+            return
+        record["actual_departure_utc"] = timestamp
         await self.async_save()
         self._notify()
 

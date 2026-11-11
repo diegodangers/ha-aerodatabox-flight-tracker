@@ -594,6 +594,67 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return
         await capture_aircraft_from_fr24(current)
         await capture_gate_events_from_fr24(current)
+        # Capture explicit reported actual departures before FR24 rotates the live record.
+        for flight in current:
+            if not isinstance(flight, dict) or flight.get("tracked_type") != "live":
+                continue
+            raw = flight.get("time_real_departure")
+            scheduled = flight.get("time_scheduled_departure")
+            if raw is None or scheduled is None:
+                continue
+            try:
+                actual = datetime.fromtimestamp(float(raw), timezone.utc)
+                planned = datetime.fromtimestamp(float(scheduled), timezone.utc)
+            except (ValueError, TypeError, OverflowError):
+                continue
+            candidates = []
+            for record in store.all():
+                meta = record.get("metadata") or {}
+                if (canonical_flight(record["flight_number"]) != canonical_flight(flight.get("flight_number") or flight.get("callsign") or "")
+                        or meta.get("departure_airport") != flight.get("airport_origin_code_iata")
+                        or meta.get("arrival_airport") != flight.get("airport_destination_code_iata")):
+                    continue
+                try:
+                    reference = datetime.fromisoformat(str(record.get("published_departure_utc")).replace("Z", "+00:00").replace(" ", "T"))
+                    if reference.tzinfo and abs((reference - planned).total_seconds()) <= 12 * 3600:
+                        candidates.append(record)
+                except (ValueError, TypeError):
+                    continue
+            if len(candidates) == 1:
+                await store.set_actual_departure(candidates[0]["flight_number"], candidates[0]["departure_date"], actual.isoformat())
+
+        # Only remove tracking that SkyLedger itself requested and confirmed.
+        # Require a matching dated live record to avoid removing a recurring flight.
+        if hass.states.get("text.flightradar24_remove_from_track"):
+            for record in store.all():
+                if not (record.get("tracking_owned") and record.get("status") == "landed"
+                        and (record.get("operational_times") or {}).get("gate_arrival_utc")
+                        and record.get("actual_departure_utc")
+                        and record.get("tracking_status") != "removed_after_gate_arrival"):
+                    continue
+                matching = []
+                for flight in current:
+                    if not isinstance(flight, dict) or flight.get("tracked_type") != "live":
+                        continue
+                    if canonical_flight(flight.get("flight_number") or "") != canonical_flight(record["flight_number"]):
+                        continue
+                    try:
+                        planned = datetime.fromtimestamp(float(flight["time_scheduled_departure"]), timezone.utc)
+                        published = datetime.fromisoformat(str(record["published_departure_utc"]).replace("Z", "+00:00").replace(" ", "T"))
+                    except (KeyError, ValueError, TypeError, OverflowError):
+                        continue
+                    if published.tzinfo and abs((planned - published).total_seconds()) <= 12 * 3600:
+                        matching.append(flight)
+                if len(matching) != 1:
+                    continue
+                try:
+                    await hass.services.async_call("text", "set_value", {
+                        "entity_id": "text.flightradar24_remove_from_track",
+                        "value": canonical_flight(record["flight_number"]),
+                    }, blocking=True)
+                    await store.mark_tracking_removed(record["flight_number"], record["departure_date"])
+                except Exception:
+                    _LOGGER.exception("FR24 cleanup failed for %s", record["id"])
         tracked = {
             str(f.get("flight_number") or f.get("callsign") or "")
             for f in current if isinstance(f, dict)
@@ -617,7 +678,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 continue
             # Persist the attempt before dispatch to avoid re-sending after a restart
             # or if FR24's text service accepts a command but loses its response.
-            await store.note_registration_attempt(record["flight_number"], record["departure_date"])
+            await store.note_registration_attempt(record["flight_number"], record["departure_date"], new_tracking=True)
             try:
                 await hass.services.async_call(
                     "text", "set_value",
