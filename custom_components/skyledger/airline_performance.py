@@ -79,7 +79,7 @@ def punctuality(records: list[dict]) -> dict:
             result["on_time_arrival_pct"] = round(100 * result["on_time_arrivals"] / len(arr), 1)
             result["worst_arrival_delay_min"] = round(max(0, max(arr)), 1)
         if arr:
-            result["overall_on_time_pct"] = round(100 * result["on_time_arrivals"] / len(arr), 1)
+            result["overall_on_time_pct"] = round(100 * result["on_time_arrivals"] / len(flights), 1)
         return result
 
     return {

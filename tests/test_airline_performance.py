@@ -11,6 +11,7 @@ spec.loader.exec_module(mod)
 def flight(number, day, scheduled, actual, travelers=None):
     return {"flight_number":number, "departure_date":day, "status":"landed",
             "finalized_at":actual, "actual_arrival_utc":actual,
+            "operational_times":{"gate_arrival_utc":{"utc":actual,"source":"flightradar24:event_detected"}},
             "published_arrival_utc":scheduled, "travelers":travelers or ["person.diego"]}
 
 class PerformanceTests(unittest.TestCase):

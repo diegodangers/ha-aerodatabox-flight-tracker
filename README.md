@@ -2,16 +2,14 @@
 
 Home Assistant flight tracking, travel history, notifications and airline reliability.
 
-**Development/migration stage.** The user-visible integration name is SkyLedger.
-The new internal domain is `skyledger`. **Do not install this migration branch on an existing installation yet.** Configuration-entry, persistent-history, service, and dashboard migrations are required before deployment.
+**Release candidate.** The integration domain is `skyledger`. New installations can install it through HACS as a custom repository after a release is published. **Existing `aerodatabox_flights` installations require an offline migration before upgrading**; see [migration instructions](docs/domain-migration.md). Installing the renamed package alone does not migrate saved configuration or history.
 
 ## Native configuration
 
 After installing and restarting, open Settings → Devices & Services → SkyLedger →
 Configure to set approved phone, Alexa/media player and TV notification recipients
 and Alexa quiet hours. These defaults apply to **new flights only**; existing
-flight-specific recipient settings are preserved. New destinations are not
-automatically approved. The Add Flight card no longer requires selecting recipients.
+flight-specific recipient settings are preserved. The optional Flight Manager card supports per-flight recipient selection. Automatic recipient discovery for newly added devices is planned but not yet implemented.
 
 The schedule provider is currently AeroDataBox, and live tracking uses
 Flightradar24. Provider independence is an architectural goal, not yet an
