@@ -94,7 +94,29 @@ class SkyLedgerFlightManagerCard extends HTMLElement {
       const label=this.el("label"),input=this.el("input");input.type="checkbox";input.value=person.entity_id;
       label.append(input,document.createTextNode(person.attributes.friendly_name||person.entity_id));people.append(label);
     }
-    form.append(people,this.el("div","note","Alert defaults are configured in SkyLedger settings."));
+    form.append(people);
+    form.append(this.el("div","section","Send flight alerts to"));
+    const recipients=this.el("div","people");
+    const defaults=this.flights().find(x=>x.attributes.alert_recipients)?.attributes.alert_recipients||{};
+    const makeGroup=(title,options,selected)=>{
+      const group=this.el("div");group.style.cssText="width:100%;margin-bottom:8px";
+      group.append(this.el("div","note",title));
+      const wrap=this.el("div","people");
+      for(const [value,name] of options){
+        const label=this.el("label"),input=this.el("input");input.type="checkbox";input.value=value;
+        input.dataset.kind=title;input.checked=selected.includes(value);
+        label.append(input,document.createTextNode(name));wrap.append(label);
+      }
+      group.append(wrap);recipients.append(group);
+    };
+    const phones=Object.values(this._hass.states).filter(x=>x.entity_id.startsWith("notify.")).map(x=>[x.entity_id,x.attributes.friendly_name||x.entity_id]);
+    const alexas=Object.values(this._hass.states).filter(x=>x.entity_id.startsWith("media_player.")&&/alexa|echo/i.test(x.entity_id+" "+(x.attributes.friendly_name||""))).map(x=>[x.entity_id,x.attributes.friendly_name||x.entity_id]);
+    makeGroup("Phones",phones,defaults.phones||phones.map(x=>x[0]));
+    makeGroup("Alexa",alexas,defaults.alexas||alexas.map(x=>x[0]));
+    const tvLabel=this.el("label","field","TV notification services (comma-separated, optional)");
+    const tvInput=this.el("input");tvInput.type="text";tvInput.placeholder="e.g. family_room_tv";
+    tvInput.value=(defaults.tv_services||[]).join(", ");tvLabel.append(tvInput);recipients.append(tvLabel);
+    form.append(recipients,this.el("div","note","Choose recipients for this flight. Alexa quiet hours remain configured in SkyLedger settings."));
     const footer=this.el("div","footer"),cancel=this.el("button","secondary","Cancel"),save=this.el("button","primary","Save flight");
     cancel.type="button";save.type="submit";cancel.onclick=()=>{this._formOpen=false;this.render();};
     footer.append(cancel,save);form.append(footer);
@@ -105,7 +127,17 @@ class SkyLedgerFlightManagerCard extends HTMLElement {
       if(!/^[A-Z0-9]{2,3}[0-9]{1,5}[A-Z]?$/.test(flight_number)||!/^\d{4}-\d{2}-\d{2}$/.test(day)){window.alert("Enter a valid flight number and date.");return;}
       if(!travelers.length){window.alert("Select at least one traveler.");return;}
       this._busy=true;save.disabled=true;save.textContent="Saving…";
-      try{await this._hass.callService("skyledger","save_flight",{flight_number,date:day,travelers},{},true,true);this._formOpen=false;this._busy=false;this.render();}
+      try{
+        await this._hass.callService("skyledger","save_flight",{flight_number,date:day,travelers},{},true,true);
+        const chosen=kind=>[...recipients.querySelectorAll("input:checked")].filter(x=>x.dataset.kind===kind).map(x=>x.value);
+        const tv_services=tvInput.value.split(",").map(x=>x.trim()).filter(Boolean);
+        try {
+          await this._hass.callService("skyledger","set_flight_alert_recipients",{flight_number,date:day,phones:chosen("Phones"),alexas:chosen("Alexa"),tv_services},{},true,true);
+        } catch(error) {
+          window.alert("Flight saved, but alert recipients could not be saved: "+(error?.message||String(error)));
+        }
+        this._formOpen=false;this._busy=false;this.render();
+      }
       catch(err){this._busy=false;save.disabled=false;save.textContent="Save flight";window.alert("Unable to save flight: "+(err?.message||String(err)));}
     };
     this._root.insertBefore(form,this._root.children[1]||null);number.focus();
