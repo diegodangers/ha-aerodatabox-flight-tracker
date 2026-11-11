@@ -705,10 +705,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 and other["departure_date"] != record["departure_date"]
                 and not other.get("finalized_at")
             ]
-            if (not duplicates and record.get('tracking_last_attempt_at')
-                    and within_registration_window(record, now)
-                    and is_fr24_tracked(record, current)):
-                await store.mark_registered(record["flight_number"], record["departure_date"])
+            # Existing tracking can be used without claiming ownership.
+            # Ambiguous recurring flight numbers are not associated by number alone.
+            present = not duplicates and within_registration_window(record, now) and is_fr24_tracked(record, current)
+            if present:
+                if record.get("tracking_last_attempt_at"):
+                    await store.mark_registered(record["flight_number"], record["departure_date"])
+                elif not record.get("tracking_registered_at"):
+                    await store.mark_external_tracking(record["flight_number"], record["departure_date"])
                 continue
             if duplicates or not should_register(record, tracked, now):
                 continue
